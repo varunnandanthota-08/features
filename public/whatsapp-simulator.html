@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Local WhatsApp Simulator</title>
+  <style>
+    body { font-family: sans-serif; margin: 2rem auto; max-width: 42rem; padding: 0 1rem; }
+    label { display: block; margin-bottom: 1rem; }
+    input { box-sizing: border-box; padding: .5rem; width: 100%; }
+    #messages { border: 1px solid #ccc; min-height: 20rem; padding: 1rem; }
+    .message { margin: .75rem 0; white-space: pre-wrap; }
+    .user { color: #174a7e; }
+    .bot { color: #236b35; }
+    form { display: flex; gap: .5rem; margin-top: 1rem; }
+    form input { flex: 1; }
+    button { padding: .5rem .75rem; }
+  </style>
+</head>
+<body>
+  <h1>Local WhatsApp Simulator</h1>
+  <label>Phone:
+    <input id="phone" value="+919876543210" autocomplete="tel">
+  </label>
+  <div id="messages" aria-live="polite"></div>
+  <form id="chat-form">
+    <input id="message" autocomplete="off" placeholder="Type a message" required>
+    <button type="submit">Send</button>
+    <button type="button" id="reset">Clear Chat / Reset</button>
+  </form>
+  <script>
+    const phoneInput = document.getElementById('phone');
+    const messageInput = document.getElementById('message');
+    const messages = document.getElementById('messages');
+    const storedPhone = localStorage.getItem('simulatorPhone');
+    if (storedPhone) phoneInput.value = storedPhone;
+
+    function addMessage(kind, text) {
+      const item = document.createElement('div');
+      item.className = `message ${kind}`;
+      item.textContent = `${kind === 'user' ? 'User' : 'Bot'}: ${text}`;
+      messages.appendChild(item);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    document.getElementById('chat-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const phone = phoneInput.value.trim();
+      const message = messageInput.value.trim();
+      if (!phone || !message) return;
+      localStorage.setItem('simulatorPhone', phone);
+      addMessage('user', message);
+      messageInput.value = '';
+
+      try {
+        const response = await fetch('/api/test/whatsapp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, message, messageId: `SM-browser-${crypto.randomUUID()}` })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.message || 'Request failed');
+        if (result.reply) addMessage('bot', result.reply);
+      } catch (error) {
+        addMessage('bot', error.message);
+      }
+    });
+
+    document.getElementById('reset').addEventListener('click', async () => {
+      const phone = phoneInput.value.trim();
+      try {
+        const response = await fetch('/api/test/whatsapp/reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone })
+        });
+        if (!response.ok) throw new Error('Reset failed');
+        messages.replaceChildren();
+      } catch (error) {
+        addMessage('bot', error.message);
+      }
+    });
+  </script>
+</body>
+</html>
