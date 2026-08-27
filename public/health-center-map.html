@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nearby Health Centres</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #18312f;
+      --muted: #637572;
+      --paper: #f6f8f3;
+      --panel: #ffffff;
+      --line: #dce5df;
+      --accent: #176b5b;
+      --accent-soft: #dcefe8;
+      --danger: #9c3d38;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      background: radial-gradient(circle at 10% 0%, #e4f1e8 0, transparent 34rem), var(--paper);
+      color: var(--ink);
+      font-family: Georgia, 'Times New Roman', serif;
+      margin: 0;
+      min-height: 100vh;
+    }
+    main { margin: 0 auto; max-width: 1180px; padding: 2.5rem 1.25rem 3rem; }
+    header { align-items: end; display: flex; justify-content: space-between; gap: 1.5rem; margin-bottom: 1.25rem; }
+    h1 { font-size: clamp(2rem, 5vw, 3.6rem); letter-spacing: 0; line-height: .98; margin: 0; max-width: 34rem; }
+    .eyebrow { color: var(--accent); font-family: 'Trebuchet MS', sans-serif; font-size: .75rem; font-weight: bold; letter-spacing: .12em; margin: 0 0 .6rem; text-transform: uppercase; }
+    .lede { color: var(--muted); font-family: 'Trebuchet MS', sans-serif; line-height: 1.5; margin: .75rem 0 0; max-width: 38rem; }
+    .filter-panel { background: var(--panel); border: 1px solid var(--line); display: grid; gap: .8rem; grid-template-columns: repeat(5, minmax(0, 1fr)) auto auto; margin-bottom: .8rem; padding: 1rem; }
+    label { color: var(--muted); display: grid; font-family: 'Trebuchet MS', sans-serif; font-size: .75rem; font-weight: bold; gap: .3rem; text-transform: uppercase; }
+    input, select, button { border: 1px solid var(--line); border-radius: .35rem; font: inherit; min-height: 2.7rem; padding: .55rem .75rem; }
+    input, select { background: var(--panel); color: var(--ink); width: 100%; }
+    button { background: var(--accent); border-color: var(--accent); color: white; cursor: pointer; font-family: 'Trebuchet MS', sans-serif; font-weight: bold; }
+    button:hover { background: #0f5145; }
+    button.secondary { background: transparent; border-color: var(--line); color: var(--ink); }
+    .map-layout { align-items: start; display: grid; gap: .8rem; grid-template-columns: minmax(0, 1fr) 20rem; }
+    .map-shell, .details-panel { background: var(--panel); border: 1px solid var(--line); box-shadow: 0 1.5rem 3rem rgba(24, 49, 47, .08); padding: .55rem; }
+    #map { border-radius: .2rem; height: min(68vh, 640px); min-height: 390px; width: 100%; }
+    #status { color: var(--muted); font-family: 'Trebuchet MS', sans-serif; min-height: 1.5rem; padding: .7rem .2rem .1rem; }
+    #status.error { color: var(--danger); }
+    .details-panel { font-family: 'Trebuchet MS', sans-serif; position: sticky; top: 1rem; }
+    .details-header { align-items: start; display: flex; gap: .5rem; justify-content: space-between; }
+    .details-header h2 { font-family: Georgia, 'Times New Roman', serif; font-size: 1.35rem; line-height: 1.1; margin: .15rem 0 .3rem; }
+    .close-button { background: transparent; border: 0; color: var(--muted); font-size: 1.4rem; min-height: auto; padding: 0 .25rem; }
+    .close-button:hover { background: var(--accent-soft); color: var(--ink); }
+    .details-panel p { margin: .45rem 0; }
+    .details-panel .distance { color: var(--accent); font-weight: bold; }
+    .details-section { border-top: 1px solid var(--line); margin-top: .75rem; padding-top: .65rem; }
+    .details-section h3 { color: var(--muted); font-size: .72rem; letter-spacing: .08em; margin: 0 0 .35rem; text-transform: uppercase; }
+    .details-panel dl { display: grid; gap: .25rem .6rem; grid-template-columns: 1fr auto; margin: 0; }
+    .details-panel dt { color: var(--muted); }
+    .details-panel dd { font-weight: bold; margin: 0; text-align: right; }
+    .details-panel ul { list-style: none; margin: 0; padding: 0; }
+    .details-panel li { padding: .12rem 0; }
+    .details-panel .select-button { margin-top: .9rem; width: 100%; }
+    .details-panel .selected-note { background: var(--accent-soft); color: var(--accent); font-size: .8rem; padding: .55rem; }
+    .selected-marker { filter: hue-rotate(110deg) saturate(1.5); }
+    .referral-modal { background: rgba(24, 49, 47, .35); inset: 0; padding: 1rem; position: fixed; z-index: 1000; }
+    .referral-form { background: var(--panel); border: 1px solid var(--line); box-shadow: 0 1.5rem 3rem rgba(24, 49, 47, .2); margin: 5vh auto; max-width: 34rem; padding: 1.25rem; }
+    .referral-form h2 { font-size: 1.7rem; margin: 0 0 .3rem; }
+    .referral-form .form-grid { display: grid; gap: .8rem; grid-template-columns: 1fr 1fr; margin-top: 1rem; }
+    .referral-form .full-width { grid-column: 1 / -1; }
+    .referral-form textarea { background: var(--panel); border: 1px solid var(--line); border-radius: .35rem; color: var(--ink); font: inherit; min-height: 5rem; padding: .55rem .75rem; resize: vertical; width: 100%; }
+    .referral-form .modal-actions { display: flex; gap: .6rem; justify-content: end; margin-top: 1rem; }
+    .referral-form .form-status { color: var(--danger); font-family: 'Trebuchet MS', sans-serif; min-height: 1.4rem; }
+    .referral-success { background: var(--accent-soft); color: var(--accent); font-family: 'Trebuchet MS', sans-serif; margin-top: 1rem; padding: .8rem; }
+    .referral-section { margin-top: 2rem; }
+    .referral-toolbar { align-items: end; display: flex; gap: .8rem; justify-content: space-between; margin-bottom: .8rem; }
+    .referral-toolbar h2 { font-size: 1.8rem; margin: 0; }
+    .referral-toolbar label { min-width: 10rem; }
+    .referral-list { display: grid; gap: .8rem; }
+    .referral-card { background: var(--panel); border: 1px solid var(--line); padding: 1rem; }
+    .referral-card-header { align-items: start; display: flex; gap: .8rem; justify-content: space-between; }
+    .referral-card h3 { font-family: Georgia, 'Times New Roman', serif; font-size: 1.25rem; margin: 0; }
+    .referral-card p { margin: .3rem 0; }
+    .referral-meta { color: var(--muted); font-size: .88rem; }
+    .status-badge { border-radius: 99rem; display: inline-block; font-family: 'Trebuchet MS', sans-serif; font-size: .72rem; font-weight: bold; padding: .3rem .55rem; }
+    .status-pending { background: #fff1c7; color: #765600; }
+    .status-accepted { background: #dcefe8; color: #176b5b; }
+    .status-completed { background: #dce9f6; color: #24527a; }
+    .status-cancelled { background: #f8dfdc; color: var(--danger); }
+    .referral-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+    .referral-actions button { min-height: 2.2rem; }
+    .referral-history { border-top: 1px solid var(--line); margin-top: .8rem; padding-top: .7rem; }
+    .referral-history summary { color: var(--accent); cursor: pointer; font-family: 'Trebuchet MS', sans-serif; font-weight: bold; }
+    .history-entry { border-left: 2px solid var(--accent); margin: .55rem 0 .55rem .35rem; padding-left: .7rem; }
+    .history-entry strong { display: block; font-family: 'Trebuchet MS', sans-serif; font-size: .8rem; }
+    .history-entry time { color: var(--muted); font-family: 'Trebuchet MS', sans-serif; font-size: .76rem; }
+    .referral-message { color: var(--muted); font-family: 'Trebuchet MS', sans-serif; min-height: 1.5rem; }
+    .referral-message.error { color: var(--danger); }
+    .popup { color: var(--ink); font-family: 'Trebuchet MS', sans-serif; line-height: 1.4; min-width: 220px; }
+    .popup h2 { font-family: Georgia, 'Times New Roman', serif; font-size: 1.15rem; margin: 0 0 .2rem; }
+    .popup p { margin: .35rem 0; }
+    .popup dl { display: grid; grid-template-columns: auto 1fr; gap: .2rem .6rem; margin: .55rem 0 0; }
+    .popup dt { color: var(--muted); font-weight: bold; }
+    .popup dd { margin: 0; }
+    .popup .section { border-top: 1px solid var(--line); margin-top: .55rem; padding-top: .45rem; }
+    @media (max-width: 650px) {
+      main { padding: 1.5rem .75rem 2rem; }
+      header { align-items: start; flex-direction: column; }
+      .filter-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .filter-panel button { width: 100%; }
+      .map-layout { grid-template-columns: 1fr; }
+      .details-panel { position: static; }
+      .referral-form .form-grid { grid-template-columns: 1fr; }
+      .referral-form .full-width { grid-column: auto; }
+      .referral-toolbar { align-items: start; flex-direction: column; }
+      .referral-toolbar label { width: 100%; }
+      #map { min-height: 60vh; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">Rural care network</p>
+        <h1>Nearby health centres</h1>
+        <p class="lede">Explore facilities around the selected location and inspect current services, capacity, and emergency availability.</p>
+      </div>
+    </header>
+    <form class="filter-panel" id="filter-form">
+      <label>Service / Department
+        <select id="service">
+          <option value="">All</option>
+          <option value="GENERAL">General</option>
+          <option value="ENT">ENT</option>
+          <option value="CARDIOLOGY">Cardiology</option>
+          <option value="PEDIATRICS">Pediatrics</option>
+          <option value="GYNECOLOGY">Gynecology</option>
+        </select>
+      </label>
+      <label>Doctor
+        <select id="doctor" disabled>
+          <option value="">Any</option>
+          <option value="available">Available</option>
+        </select>
+      </label>
+      <label>Equipment
+        <select id="equipment">
+          <option value="">None</option>
+          <option value="ecg">ECG</option>
+          <option value="xray">X-Ray</option>
+          <option value="ultrasound">Ultrasound</option>
+        </select>
+      </label>
+      <label>Emergency
+        <select id="emergency">
+          <option value="">Any</option>
+          <option value="available">Available</option>
+        </select>
+      </label>
+      <label>Max distance
+        <select id="max-distance">
+          <option value="5">5 km</option>
+          <option value="10" selected>10 km</option>
+          <option value="20">20 km</option>
+        </select>
+      </label>
+      <button type="submit">Apply</button>
+      <button class="secondary" type="button" id="clear-filters">Clear</button>
+    </form>
+    <div id="status" role="status" aria-live="polite">Loading facilities...</div>
+    <div class="map-layout">
+      <section class="map-shell" aria-label="Nearby health centre map">
+        <div id="map"></div>
+      </section>
+      <aside class="details-panel" id="details-panel" aria-live="polite" hidden></aside>
+    </div>
+    <section class="referral-section" aria-labelledby="referrals-heading">
+      <div class="referral-toolbar">
+        <h2 id="referrals-heading">Referrals</h2>
+        <label>Status
+          <select id="referral-status-filter">
+            <option value="">All</option>
+            <option value="PENDING">Pending</option>
+            <option value="ACCEPTED">Accepted</option>
+            <option value="COMPLETED">Completed</option>
+            <option value="CANCELLED">Cancelled</option>
+          </select>
+        </label>
+      </div>
+      <div class="referral-message" id="referral-list-message" role="status" aria-live="polite">Loading referrals...</div>
+      <div class="referral-list" id="referral-list"></div>
+    </section>
+  </main>
+  <div class="referral-modal" id="referral-modal" hidden>
+    <form class="referral-form" id="referral-form">
+      <div class="details-header">
+        <div><p class="eyebrow">New referral</p><h2>Create referral</h2><p id="referral-destination"></p></div>
+        <button class="close-button" type="button" id="close-referral" aria-label="Close referral form">&times;</button>
+      </div>
+      <div class="form-grid">
+        <label>Patient ID
+          <input id="patient-id" name="patientId" required>
+        </label>
+        <label>Source health centre ID
+          <input id="source-health-center-id" name="fromHealthCenterId" required>
+        </label>
+        <label class="full-width">Reason
+          <input id="referral-reason" name="reason" required>
+        </label>
+        <label>Required service
+          <input id="required-service" name="requiredService">
+        </label>
+        <label>Required equipment
+          <input id="required-equipment" name="requiredEquipment">
+        </label>
+        <label class="full-width">Notes
+          <textarea id="referral-notes" name="notes"></textarea>
+        </label>
+      </div>
+      <div class="form-status" id="referral-form-status" role="alert"></div>
+      <div class="modal-actions">
+        <button class="secondary" type="button" id="cancel-referral">Cancel</button>
+        <button type="submit" id="submit-referral">Create Referral</button>
+      </div>
+      <div class="referral-success" id="referral-success" hidden></div>
+    </form>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const mapLocation = { latitude: 17.421, longitude: 78.381 };
+    const map = L.map('map').setView([mapLocation.latitude, mapLocation.longitude], 11);
+    const markerLayer = L.layerGroup().addTo(map);
+    const statusElement = document.getElementById('status');
+    const serviceSelect = document.getElementById('service');
+    const doctorSelect = document.getElementById('doctor');
+    const equipmentSelect = document.getElementById('equipment');
+    const emergencySelect = document.getElementById('emergency');
+    const maxDistanceSelect = document.getElementById('max-distance');
+    const detailsPanel = document.getElementById('details-panel');
+    let selectedFacility = null;
+    let selectedMarker = null;
+    let facilitySelectionConfirmed = false;
+    const referralModal = document.getElementById('referral-modal');
+    const referralForm = document.getElementById('referral-form');
+    const referralFormStatus = document.getElementById('referral-form-status');
+    const referralSuccess = document.getElementById('referral-success');
+    const submitReferralButton = document.getElementById('submit-referral');
+    const referralList = document.getElementById('referral-list');
+    const referralListMessage = document.getElementById('referral-list-message');
+    const referralStatusFilter = document.getElementById('referral-status-filter');
+    let referrals = [];
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19
+    }).addTo(map);
+    L.marker([mapLocation.latitude, mapLocation.longitude]).addTo(map).bindPopup('<strong>Selected location</strong>');
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>'"]/g, character => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+      }[character]));
+    }
+
+    function validCoordinate(facility) {
+      const latitude = Number(facility.location?.latitude);
+      const longitude = Number(facility.location?.longitude);
+      return Number.isFinite(latitude) && latitude >= -90 && latitude <= 90
+        && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
+    }
+
+    function listValues(values, fallback = 'None listed') {
+      return Array.isArray(values) && values.length ? values.map(escapeHtml).join(', ') : fallback;
+    }
+
+    function popupHtml(facility, details) {
+      const data = details || facility;
+      const doctors = data.doctors || {};
+      const equipment = data.equipment || {};
+      const capacity = Number.isFinite(Number(data.capacity)) ? `${data.currentPatientLoad || 0} / ${data.capacity}` : 'Not provided';
+      const availableCapacity = Number.isFinite(Number(data.capacity))
+        ? Number(data.capacity) - Number(data.currentPatientLoad || 0)
+        : 'Not provided';
+      return `<article class="popup">
+        <h2>${escapeHtml(data.name || facility.name || 'Health centre')}</h2>
+        <p><strong>${escapeHtml(facility.distanceKm)} km away</strong></p>
+        <div class="section"><strong>Services</strong><p>${listValues(data.services)}</p></div>
+        <div class="section"><strong>Doctors</strong><dl>
+          <dt>General</dt><dd>${escapeHtml(doctors.general ?? 0)}</dd>
+          <dt>ENT</dt><dd>${escapeHtml(doctors.ent ?? 0)}</dd>
+          <dt>Cardiology</dt><dd>${escapeHtml(doctors.cardiology ?? 0)}</dd>
+        </dl></div>
+        <div class="section"><strong>Equipment</strong><dl>
+          <dt>ECG</dt><dd>${equipment.ecg === true ? 'Available' : 'Not available'}</dd>
+          <dt>X-Ray</dt><dd>${equipment.xray === true ? 'Available' : 'Not available'}</dd>
+          <dt>Ultrasound</dt><dd>${equipment.ultrasound === true ? 'Available' : 'Not available'}</dd>
+        </dl></div>
+        <div class="section"><strong>Capacity</strong><p>${escapeHtml(capacity)}</p><p><strong>Available capacity:</strong> ${escapeHtml(availableCapacity)}</p></div>
+        <p><strong>Emergency:</strong> ${data.emergencyAvailable === true ? 'Available' : 'Not available'}</p>
+      </article>`;
+    }
+
+    function detailsPanelHtml(facility, details) {
+      const data = details || facility;
+      const doctors = data.doctors || {};
+      const equipment = data.equipment || {};
+      const address = data.address || [data.village, data.district, data.state].filter(Boolean).join(', ') || 'Address unavailable';
+      const capacity = Number.isFinite(Number(data.capacity)) ? `${data.currentPatientLoad || 0} / ${data.capacity}` : 'Not provided';
+      const availableCapacity = Number.isFinite(Number(data.capacity))
+        ? Number(data.capacity) - Number(data.currentPatientLoad || 0)
+        : 'Not provided';
+      const selected = facilitySelectionConfirmed && selectedFacility?.healthCenterId === facility.healthCenterId;
+      return `<div class="details-header">
+          <div><p class="eyebrow">Selected facility</p><h2>${escapeHtml(data.name || facility.name || 'Health centre')}</h2></div>
+          <button class="close-button" type="button" id="close-details" aria-label="Close facility details">&times;</button>
+        </div>
+        <p class="distance">${escapeHtml(facility.distanceKm)} km away</p>
+        <p>${escapeHtml(address)}</p>
+        <div class="details-section"><h3>Services</h3><ul>${(data.services || []).map(service => `<li>Available: ${escapeHtml(service)}</li>`).join('') || '<li>None listed</li>'}</ul></div>
+        <div class="details-section"><h3>Doctors</h3><dl>
+          <dt>General</dt><dd>${escapeHtml(doctors.general ?? 0)}</dd>
+          <dt>ENT</dt><dd>${escapeHtml(doctors.ent ?? 0)}</dd>
+          <dt>Cardiology</dt><dd>${escapeHtml(doctors.cardiology ?? 0)}</dd>
+          <dt>Pediatrics</dt><dd>${escapeHtml(doctors.pediatrics ?? 0)}</dd>
+          <dt>Gynecology</dt><dd>${escapeHtml(doctors.gynecology ?? 0)}</dd>
+        </dl></div>
+        <div class="details-section"><h3>Equipment</h3><ul>
+          <li>${equipment.ecg === true ? 'Available' : 'Not available'}: ECG</li>
+          <li>${equipment.xray === true ? 'Available' : 'Not available'}: X-Ray</li>
+          <li>${equipment.ultrasound === true ? 'Available' : 'Not available'}: Ultrasound</li>
+        </ul></div>
+        <div class="details-section"><h3>Capacity</h3><p>${escapeHtml(capacity)}</p><p><strong>${escapeHtml(availableCapacity)} available</strong></p></div>
+        <div class="details-section"><h3>Emergency</h3><p>${data.emergencyAvailable === true ? 'Available' : 'Not available'}</p></div>
+        <button class="select-button" type="button" id="select-facility">${selected ? 'Create Referral' : 'Select Facility'}</button>
+        ${selected ? '<p class="selected-note">This facility is selected for the next step.</p>' : ''}`;
+    }
+
+    function renderDetailsPanel(facility, details) {
+      detailsPanel.innerHTML = detailsPanelHtml(facility, details);
+      detailsPanel.hidden = false;
+      detailsPanel.querySelector('#close-details').addEventListener('click', clearSelectedFacility);
+      detailsPanel.querySelector('#select-facility').addEventListener('click', () => {
+        if (!facilitySelectionConfirmed) {
+          facilitySelectionConfirmed = true;
+          renderDetailsPanel(facility, details);
+        } else {
+          openReferralForm();
+        }
+      });
+    }
+
+    function openReferralForm() {
+      if (!selectedFacility) return;
+      document.getElementById('referral-destination').textContent = `Destination: ${selectedFacility.name || selectedFacility.healthCenterId} (${selectedFacility.healthCenterId})`;
+      referralFormStatus.textContent = '';
+      referralSuccess.hidden = true;
+      referralSuccess.replaceChildren();
+      submitReferralButton.disabled = false;
+      submitReferralButton.textContent = 'Create Referral';
+      referralModal.hidden = false;
+      document.getElementById('patient-id').focus();
+    }
+
+    function closeReferralForm() {
+      referralModal.hidden = true;
+      referralFormStatus.textContent = '';
+      referralSuccess.hidden = true;
+    }
+
+    function showFacilityDetails(facility, details, marker) {
+      if (selectedMarker?.getElement()) selectedMarker.getElement().classList.remove('selected-marker');
+      selectedFacility = facility;
+      selectedMarker = marker;
+      facilitySelectionConfirmed = false;
+      if (selectedMarker.getElement()) selectedMarker.getElement().classList.add('selected-marker');
+      renderDetailsPanel(facility, details);
+    }
+
+    function clearSelectedFacility() {
+      if (selectedMarker?.getElement()) selectedMarker.getElement().classList.remove('selected-marker');
+      selectedFacility = null;
+      selectedMarker = null;
+      facilitySelectionConfirmed = false;
+      detailsPanel.hidden = true;
+      detailsPanel.replaceChildren();
+    }
+
+    function formatDate(value) {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? 'Unknown date' : date.toLocaleString();
+    }
+
+    function statusClass(status) {
+      return `status-${String(status || '').toLowerCase()}`;
+    }
+
+    function referralActions(referral) {
+      if (referral.status === 'PENDING') return [['ACCEPTED', 'Accept'], ['CANCELLED', 'Cancel']];
+      if (referral.status === 'ACCEPTED') return [['COMPLETED', 'Complete'], ['CANCELLED', 'Cancel']];
+      return [];
+    }
+
+    function renderReferrals() {
+      const filtered = referralStatusFilter.value
+        ? referrals.filter(referral => referral.status === referralStatusFilter.value)
+        : referrals;
+      referralList.replaceChildren();
+      if (!filtered.length) {
+        referralListMessage.className = 'referral-message';
+        referralListMessage.textContent = referrals.length ? 'No referrals match this status.' : 'No referrals found.';
+        return;
+      }
+      referralListMessage.textContent = '';
+      filtered.forEach(referral => {
+        const card = document.createElement('article');
+        card.className = 'referral-card';
+        const actions = referralActions(referral).map(([status, label]) => `<button type="button" data-referral-status="${status}" data-referral-id="${escapeHtml(referral.referralId)}">${label}</button>`).join('');
+        const history = (referral.statusHistory || []).map(entry => `<div class="history-entry"><strong>${escapeHtml(entry.status)}</strong><time>${escapeHtml(formatDate(entry.changedAt))}</time></div>`).join('');
+        card.innerHTML = `<div class="referral-card-header"><div><h3>${escapeHtml(referral.referralId)}</h3><p class="referral-meta">Patient: ${escapeHtml(referral.patientId)}</p></div><span class="status-badge ${statusClass(referral.status)}">${escapeHtml(referral.status)}</span></div>
+          <p><strong>From:</strong> ${escapeHtml(referral.fromHealthCenterId)} <strong>To:</strong> ${escapeHtml(referral.toHealthCenterId)}</p>
+          <p><strong>Reason:</strong> ${escapeHtml(referral.reason)}</p>
+          <p class="referral-meta"><strong>Service:</strong> ${escapeHtml(referral.requiredService || 'Not specified')} &middot; <strong>Equipment:</strong> ${escapeHtml(referral.requiredEquipment || 'Not specified')}</p>
+          <p class="referral-meta"><strong>Created:</strong> ${escapeHtml(formatDate(referral.createdAt))}</p>
+          ${actions ? `<div class="referral-actions">${actions}</div>` : ''}
+          <details class="referral-history"><summary>Status History</summary>${history || '<p class="referral-meta">No status history available.</p>'}</details>`;
+        referralList.appendChild(card);
+      });
+    }
+
+    async function loadReferrals() {
+      referralListMessage.className = 'referral-message';
+      referralListMessage.textContent = 'Loading referrals...';
+      try {
+        const response = await fetch('/api/referrals');
+        if (!response.ok) throw new Error('Referral request failed');
+        const result = await response.json();
+        referrals = Array.isArray(result.data) ? result.data : [];
+        renderReferrals();
+      } catch (error) {
+        referralList.replaceChildren();
+        referralListMessage.className = 'referral-message error';
+        referralListMessage.textContent = 'Unable to load referrals.';
+      }
+    }
+
+    async function updateReferralStatus(referralId, status, button) {
+      button.disabled = true;
+      try {
+        const response = await fetch(`/api/referrals/${encodeURIComponent(referralId)}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.message || 'Unable to update referral status');
+        const refreshed = await fetch(`/api/referrals/${encodeURIComponent(referralId)}`);
+        const refreshedResult = await refreshed.json();
+        referrals = referrals.map(referral => referral.referralId === referralId ? refreshedResult.data : referral);
+        renderReferrals();
+      } catch (error) {
+        referralListMessage.className = 'referral-message error';
+        referralListMessage.textContent = 'Unable to update referral status.';
+        button.disabled = false;
+      }
+    }
+
+    async function getFacilityDetails(facility) {
+      const response = await fetch(`/api/health-centers/${encodeURIComponent(facility.healthCenterId)}`);
+      if (!response.ok) return null;
+      const result = await response.json();
+      return result.data || null;
+    }
+
+    function matchesFilters(facility, details, filters) {
+      if (!details) return !filters.service && !filters.doctor && !filters.equipment && !filters.emergency;
+      const services = (details.services || []).map(value => String(value).trim().toUpperCase());
+      if (filters.service && !services.includes(filters.service)) return false;
+      if (filters.doctor && (!filters.service || Number(details.doctors?.[filters.service.toLowerCase()]) <= 0)) return false;
+      if (filters.equipment && details.equipment?.[filters.equipment] !== true) return false;
+      if (filters.emergency && details.emergencyAvailable !== true) return false;
+      return true;
+    }
+
+    async function loadFacilities() {
+      const filters = {
+        service: serviceSelect.value,
+        doctor: doctorSelect.value,
+        equipment: equipmentSelect.value,
+        emergency: emergencySelect.value,
+        maxDistance: Number(maxDistanceSelect.value)
+      };
+      const radius = filters.maxDistance;
+      if (!Number.isFinite(radius) || radius <= 0) {
+        statusElement.className = 'error';
+        statusElement.textContent = 'Unable to load facilities.';
+        return;
+      }
+      statusElement.className = '';
+      statusElement.textContent = 'Loading facilities...';
+      markerLayer.clearLayers();
+      clearSelectedFacility();
+      try {
+        const response = await fetch(`/api/health-centers/nearby?latitude=${mapLocation.latitude}&longitude=${mapLocation.longitude}&radius=${radius}`);
+        if (!response.ok) throw new Error('Nearby request failed');
+        const result = await response.json();
+        const facilities = (result.data || []).filter(validCoordinate);
+        const facilitiesWithDetails = await Promise.all(facilities.map(async facility => ({
+          facility,
+          details: await getFacilityDetails(facility)
+        })));
+        const filteredFacilities = facilitiesWithDetails.filter(({ facility, details }) => matchesFilters(facility, details, filters));
+        if (!filteredFacilities.length) {
+          statusElement.textContent = 'No facilities match the selected filters.';
+          return;
+        }
+        filteredFacilities.forEach(({ facility, details }) => {
+          const marker = L.marker([facility.location.latitude, facility.location.longitude]).addTo(markerLayer);
+          marker.bindPopup(popupHtml(facility, details));
+          marker.on('click', () => showFacilityDetails(facility, details, marker));
+        });
+        statusElement.textContent = `${filteredFacilities.length} facilit${filteredFacilities.length === 1 ? 'y' : 'ies'} found within ${radius} km.`;
+      } catch (error) {
+        statusElement.className = 'error';
+        statusElement.textContent = 'Unable to load facilities.';
+      }
+    }
+
+    serviceSelect.addEventListener('change', () => {
+      doctorSelect.disabled = !serviceSelect.value;
+      if (!serviceSelect.value) doctorSelect.value = '';
+    });
+
+    document.getElementById('filter-form').addEventListener('submit', event => {
+      event.preventDefault();
+      loadFacilities();
+    });
+    document.getElementById('clear-filters').addEventListener('click', () => {
+      serviceSelect.value = '';
+      doctorSelect.value = '';
+      doctorSelect.disabled = true;
+      equipmentSelect.value = '';
+      emergencySelect.value = '';
+      maxDistanceSelect.value = '10';
+      loadFacilities();
+    });
+    document.getElementById('close-referral').addEventListener('click', closeReferralForm);
+    document.getElementById('cancel-referral').addEventListener('click', closeReferralForm);
+    referralForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (!selectedFacility) return;
+      const formData = new FormData(referralForm);
+      const payload = {
+        referralId: `REF-${Date.now()}-${crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 10)}`,
+        patientId: formData.get('patientId').trim(),
+        fromHealthCenterId: formData.get('fromHealthCenterId').trim(),
+        toHealthCenterId: selectedFacility.healthCenterId,
+        reason: formData.get('reason').trim(),
+        requiredService: formData.get('requiredService').trim(),
+        requiredEquipment: formData.get('requiredEquipment').trim(),
+        notes: formData.get('notes').trim()
+      };
+      if (!payload.patientId || !payload.fromHealthCenterId || !payload.reason) {
+        referralFormStatus.textContent = 'Patient ID, source health centre ID, and reason are required.';
+        return;
+      }
+      submitReferralButton.disabled = true;
+      submitReferralButton.textContent = 'Creating Referral...';
+      referralFormStatus.textContent = '';
+      try {
+        const response = await fetch('/api/referrals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(response.status === 409 ? 'A referral with this ID already exists. Please try again.' : result.message || 'Unable to create referral');
+        referralSuccess.innerHTML = `<strong>Referral created successfully</strong><br>Referral ID: ${escapeHtml(result.data?.referralId || payload.referralId)}<br>Destination: ${escapeHtml(selectedFacility.name || selectedFacility.healthCenterId)}<br>Status: PENDING`;
+        referralSuccess.hidden = false;
+        submitReferralButton.textContent = 'Created';
+        await loadReferrals();
+      } catch (error) {
+        referralFormStatus.textContent = error.message === 'Failed to fetch' ? 'Unable to create referral' : error.message;
+        submitReferralButton.disabled = false;
+        submitReferralButton.textContent = 'Create Referral';
+      }
+    });
+    referralStatusFilter.addEventListener('change', renderReferrals);
+    referralList.addEventListener('click', event => {
+      const button = event.target.closest('[data-referral-status]');
+      if (button) updateReferralStatus(button.dataset.referralId, button.dataset.referralStatus, button);
+    });
+    loadFacilities();
+    loadReferrals();
+  </script>
+</body>
+</html>
