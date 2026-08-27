@@ -7,6 +7,11 @@ const conversationSchema = new mongoose.Schema({
     required: true,
     index: true
   },
+  callSid: {
+    type: String,
+    default: null,
+    index: true
+  },
   channel: {
     type: String,
     required: true,
@@ -38,6 +43,21 @@ const conversationSchema = new mongoose.Schema({
   timestamps: true
 });
 
-conversationSchema.index({ phone: 1, channel: 1 }, { unique: true });
+conversationSchema.index(
+  { phone: 1, channel: 1 },
+  {
+    name: 'whatsapp_phone_channel_unique',
+    unique: true,
+    partialFilterExpression: { channel: 'WHATSAPP' }
+  }
+);
+conversationSchema.index(
+  { callSid: 1, channel: 1 },
+  {
+    name: 'ivr_call_sid_channel_unique',
+    unique: true,
+    partialFilterExpression: { channel: 'IVR', callSid: { $type: 'string' } }
+  }
+);
 
 module.exports = mongoose.model('Conversation', conversationSchema);

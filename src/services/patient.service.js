@@ -3,6 +3,7 @@ const { normalizeWhatsAppNumber } = require('../config/twilio');
 
 const allowedGenders = new Set(['male', 'female', 'other', 'prefer_not_to_say']);
 const allowedLanguages = new Set(['te', 'hi', 'en']);
+const allowedSources = new Set(['WHATSAPP', 'IVR']);
 
 function normalizePhone(phone) {
   return normalizeWhatsAppNumber(phone).replace(/^whatsapp:/, '');
@@ -29,6 +30,9 @@ function validatePatientData(patientData) {
   if (!allowedLanguages.has(patientData.language)) {
     throw new Error('Patient language is invalid');
   }
+  if (patientData.source !== undefined && !allowedSources.has(patientData.source)) {
+    throw new Error('Patient source is invalid');
+  }
 }
 
 function toPatientDocument(patientData) {
@@ -42,7 +46,7 @@ function toPatientDocument(patientData) {
     location: { village: patientData.village.trim() },
     language: patientData.language,
     symptomsDescription: patientData.symptomsDescription.trim(),
-    source: 'WHATSAPP'
+    source: patientData.source || 'WHATSAPP'
   };
 }
 

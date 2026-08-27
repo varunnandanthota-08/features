@@ -73,6 +73,61 @@ Browser -> /api/test/whatsapp -> Conversation Service -> MongoDB -> Browser
 
 The simulator and its reset endpoint are available only when `NODE_ENV` is not `production`. The browser sends a generated MessageSid, so the existing idempotency behavior is exercised. To test a duplicate directly, send the same `messageId` in two requests. Reset removes only the test Conversation for the selected phone; it does not delete Patient data.
 
+## Phase 1 IVR
+
+Configure the Twilio phone number's **A Call Comes In** Voice webhook as:
+
+```text
+POST https://<your-public-host>/api/ivr/incoming
+```
+
+The IVR flow is:
+
+```text
+Call -> language -> name -> age -> gender -> village -> symptoms -> confirmation -> Patient -> hang up
+```
+
+IVR sessions use Twilio `CallSid` and are stored in the existing `Conversation` collection with `channel: "IVR"`. Patient persistence uses the existing Patient service and model. This phase uses DTMF for language and gender and Twilio speech gathering for name, age, village, and symptoms. Telugu is stored as `te`, but Telugu speech recognition is not assumed or configured; the speech steps currently use the English TwiML voice/prompt and should be replaced with an external Telugu STT integration later if required.
+
+IVR endpoints:
+
+```text
+POST /api/ivr/incoming
+POST /api/ivr/language
+POST /api/ivr/name
+POST /api/ivr/age
+POST /api/ivr/gender
+POST /api/ivr/location
+POST /api/ivr/symptoms
+POST /api/ivr/confirm
+```
+
+### Local IVR Simulator
+
+When `NODE_ENV` is not `production`, use the HTTP simulator before connecting a Twilio Voice number:
+
+```text
+POST /api/test/ivr/start
+POST /api/test/ivr/input
+POST /api/test/ivr/reset
+```
+
+Example PowerShell flow:
+
+```powershell
+$phone = '+910000000001'
+$session = (Invoke-RestMethod -Method Post -Uri http://localhost:5000/api/test/ivr/start -ContentType 'application/json' -Body (@{ phone = $phone } | ConvertTo-Json)).sessionId
+Invoke-RestMethod -Method Post -Uri http://localhost:5000/api/test/ivr/input -ContentType 'application/json' -Body (@{ sessionId = $session; value = '3' } | ConvertTo-Json)
+Invoke-RestMethod -Method Post -Uri http://localhost:5000/api/test/ivr/input -ContentType 'application/json' -Body (@{ sessionId = $session; value = 'Ravi Kumar' } | ConvertTo-Json)
+Invoke-RestMethod -Method Post -Uri http://localhost:5000/api/test/ivr/input -ContentType 'application/json' -Body (@{ sessionId = $session; value = '52' } | ConvertTo-Json)
+Invoke-RestMethod -Method Post -Uri http://localhost:5000/api/test/ivr/input -ContentType 'application/json' -Body (@{ sessionId = $session; value = '1' } | ConvertTo-Json)
+Invoke-RestMethod -Method Post -Uri http://localhost:5000/api/test/ivr/input -ContentType 'application/json' -Body (@{ sessionId = $session; value = 'Nalgonda' } | ConvertTo-Json)
+Invoke-RestMethod -Method Post -Uri http://localhost:5000/api/test/ivr/input -ContentType 'application/json' -Body (@{ sessionId = $session; value = 'I have had fever for three days' } | ConvertTo-Json)
+Invoke-RestMethod -Method Post -Uri http://localhost:5000/api/test/ivr/input -ContentType 'application/json' -Body (@{ sessionId = $session; value = '1' } | ConvertTo-Json)
+```
+
+Use the returned `sessionId` for each request, or send `phone` instead to load the current IVR session. The simulator uses the same IVR service handlers as Twilio and does not save a Patient until confirmation. Use the fake number `+910000000001` in tests. It is development-only and is not real WhatsApp or real Voice traffic.
+
 ## Run Tests
 
 ```bash

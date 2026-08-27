@@ -1,7 +1,10 @@
 const request = require('supertest');
 
 const mockConversations = new Map();
+const previousNodeEnv = process.env.NODE_ENV;
+const previousTwilioValidation = process.env.TWILIO_VALIDATE_WEBHOOK;
 process.env.NODE_ENV = 'test';
+process.env.TWILIO_VALIDATE_WEBHOOK = 'false';
 
 jest.mock('../../src/models/Conversation', () => {
   class MockConversation {
@@ -42,6 +45,14 @@ describe('WhatsApp webhook', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  afterAll(() => {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+
+    if (previousTwilioValidation === undefined) delete process.env.TWILIO_VALIDATE_WEBHOOK;
+    else process.env.TWILIO_VALIDATE_WEBHOOK = previousTwilioValidation;
   });
 
   test('processes a mocked Twilio request through the conversation service', async () => {

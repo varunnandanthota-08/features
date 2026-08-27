@@ -1,6 +1,7 @@
 const twilio = require('twilio');
 const { createWhatsAppChatLink } = require('../src/config/whatsapp');
 const {
+  createTwilioWebhookValidation,
   getWebhookUrl,
   validateTwilioWebhook
 } = require('../src/middleware/twilioWebhookValidation');
@@ -70,5 +71,42 @@ describe('Stage 6 configuration and webhook security', () => {
       body: {},
       get: name => name === 'host' ? 'example.ngrok.app' : name === 'X-Twilio-Signature' ? 'invalid' : undefined
     })).toBe(false);
+  });
+
+  test('validates an IVR signature against the actual IVR request URL', () => {
+    const authToken = 'test-auth-token';
+    const body = { CallSid: 'CA123', From: '+919876543210' };
+    const request = {
+      protocol: 'http',
+      originalUrl: '/api/ivr/incoming',
+      body,
+      get: name => name === 'host' ? 'example.ngrok.app' : undefined
+    };
+    const url = getWebhookUrl(request, { useRequestUrl: true });
+    const signature = twilio.getExpectedTwilioSignature(authToken, url, body);
+
+    process.env.TWILIO_VALIDATE_WEBHOOK = 'true';
+    process.env.TWILIO_AUTH_TOKEN = authToken;
+
+    expect(validateTwilioWebhook({
+      ...request,
+      get: name => name === 'X-Twilio-Signature' ? signature : request.get(name)
+    }, { useRequestUrl: true })).toBe(true);
+  });
+
+  test('rejects an invalid IVR signature', () => {
+    process.env.TWILIO_VALIDATE_WEBHOOK = 'true';
+    process.env.TWILIO_AUTH_TOKEN = 'test-auth-token';
+
+    expect(validateTwilioWebhook({
+      protocol: 'https',
+      originalUrl: '/api/ivr/incoming',
+      body: {},
+      get: name => name === 'host' ? 'example.ngrok.app' : name === 'X-Twilio-Signature' ? 'invalid' : undefined
+    }, { useRequestUrl: true })).toBe(false);
+  });
+
+  test('creates a route validator for IVR request URLs', () => {
+    expect(createTwilioWebhookValidation({ useRequestUrl: true })).toEqual(expect.any(Function));
   });
 });

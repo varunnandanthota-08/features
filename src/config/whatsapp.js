@@ -1,6 +1,6 @@
-const { publicNumber } = require('./twilio');
-
 function createWhatsAppChatLink(text = 'Hi') {
+  const publicNumber = process.env.WHATSAPP_PUBLIC_NUMBER;
+
   if (!publicNumber) {
     throw new Error('WHATSAPP_PUBLIC_NUMBER is not configured');
   }

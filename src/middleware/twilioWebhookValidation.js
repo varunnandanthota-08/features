@@ -8,11 +8,34 @@ function shouldValidateWebhook() {
   return process.env.TWILIO_VALIDATE_WEBHOOK === 'true';
 }
 
-function getWebhookUrl(req) {
-  return process.env.TWILIO_WEBHOOK_URL || `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+function getRequestWebhookUrl(req) {
+  const forwardedProtocol = req.get('x-forwarded-proto');
+  const protocol = forwardedProtocol ? forwardedProtocol.split(',')[0].trim() : req.protocol;
+  return `${protocol}://${req.get('host')}${req.originalUrl}`;
 }
 
-function validateTwilioWebhook(req) {
+function getWebhookUrl(req, { useRequestUrl = false } = {}) {
+  return !useRequestUrl && process.env.TWILIO_WEBHOOK_URL
+    ? process.env.TWILIO_WEBHOOK_URL
+    : getRequestWebhookUrl(req);
+}
+
+function createTwilioWebhookValidation(options = {}) {
+  return function routeTwilioWebhookValidation(req, res, next) {
+    if (!validateTwilioWebhook(req, options)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Invalid webhook signature'
+      });
+    }
+
+    return next();
+  };
+}
+
+const twilioWebhookValidation = createTwilioWebhookValidation();
+
+function validateTwilioWebhook(req, options = {}) {
   if (!shouldValidateWebhook()) {
     return true;
   }
@@ -24,21 +47,11 @@ function validateTwilioWebhook(req) {
     return false;
   }
 
-  return twilio.validateRequest(authToken, signature, getWebhookUrl(req), req.body);
-}
-
-function twilioWebhookValidation(req, res, next) {
-  if (!validateTwilioWebhook(req)) {
-    return res.status(403).json({
-      success: false,
-      message: 'Invalid webhook signature'
-    });
-  }
-
-  return next();
+  return twilio.validateRequest(authToken, signature, getWebhookUrl(req, options), req.body);
 }
 
 module.exports = {
+  createTwilioWebhookValidation,
   getWebhookUrl,
   shouldValidateWebhook,
   twilioWebhookValidation,

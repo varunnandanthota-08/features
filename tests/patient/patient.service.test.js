@@ -42,6 +42,15 @@ describe('patient service', () => {
     });
   });
 
+  test('creates an IVR patient with IVR source', async () => {
+    await createOrUpdatePatient({ ...validPatient, source: 'IVR' });
+
+    expect(await findByPhone(validPatient.phone)).toMatchObject({
+      phone: '+919876543210',
+      source: 'IVR'
+    });
+  });
+
   test('updates an existing phone without creating a duplicate', async () => {
     await createOrUpdatePatient({ ...validPatient, age: 50 });
     await createOrUpdatePatient({ ...validPatient, age: 52 });
