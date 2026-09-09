@@ -1,4 +1,4 @@
-const { normalizeWhatsAppNumber } = require('../config/twilio');
+const { normalizePhoneNumber } = require('../config/twilio');
 const Conversation = require('../models/Conversation');
 const { CONVERSATION_STATES } = require('../constants/conversationStates');
 const enMessages = require('../messages/en');
@@ -8,9 +8,10 @@ const { createOrUpdatePatient } = require('./patient.service');
 
 const messagesByLanguage = { en: enMessages, hi: hiMessages, te: teMessages };
 const channel = 'WHATSAPP';
+const smsChannel = 'SMS';
 
 function normalizePhone(phone) {
-  return normalizeWhatsAppNumber(phone).replace(/^whatsapp:/, '');
+  return normalizePhoneNumber(phone);
 }
 
 function getMessages(language) {
@@ -33,19 +34,19 @@ async function processMessage({ phone, message, messageId, channel: messageChann
   const normalizedPhone = normalizePhone(phone);
   const normalizedMessage = typeof message === 'string' ? message.trim() : '';
 
-  if (messageChannel !== channel) {
+  if (![channel, smsChannel].includes(messageChannel)) {
     throw new Error('Unsupported conversation channel');
   }
 
   let conversation = await Conversation.findOne({
     phone: normalizedPhone,
-    channel
+    channel: messageChannel
   });
 
   if (!conversation) {
     conversation = new Conversation({
       phone: normalizedPhone,
-      channel,
+      channel: messageChannel,
       state: CONVERSATION_STATES.SELECT_LANGUAGE,
       processedMessageIds: messageId ? [messageId] : []
     });
@@ -126,6 +127,11 @@ async function processMessage({ phone, message, messageId, channel: messageChann
         return saveResponse(conversation, messageId, getMessages(conversation.language).askSymptoms);
       }
       conversation.data.symptomsDescription = normalizedMessage;
+      if (messageChannel === smsChannel) {
+        conversation.state = CONVERSATION_STATES.CONFIRM;
+        return saveResponse(conversation, messageId, getMessages(conversation.language).askConfirmation);
+      }
+
       try {
         await createOrUpdatePatient({
           phone: conversation.phone,
@@ -148,6 +154,45 @@ async function processMessage({ phone, message, messageId, channel: messageChann
 
       conversation.state = CONVERSATION_STATES.COMPLETED;
       return saveResponse(conversation, messageId, getMessages(conversation.language).completed);
+
+    case CONVERSATION_STATES.CONFIRM: {
+      if (messageChannel !== smsChannel) {
+        throw new Error(`Unknown conversation state: ${conversation.state}`);
+      }
+      if (normalizedMessage === '2' || normalizedMessage.toLowerCase() === 'no') {
+        conversation.state = CONVERSATION_STATES.SELECT_LANGUAGE;
+        conversation.language = null;
+        conversation.data = {};
+        return saveResponse(conversation, messageId, `${enMessages.welcome}\n\n${enMessages.languageSelection}`);
+      }
+      if (normalizedMessage !== '1' && normalizedMessage.toLowerCase() !== 'yes') {
+        return saveResponse(conversation, messageId, getMessages(conversation.language).invalidConfirmation);
+      }
+
+      try {
+        await createOrUpdatePatient({
+          phone: conversation.phone,
+          name: conversation.data.name,
+          age: conversation.data.age,
+          gender: conversation.data.gender,
+          village: conversation.data.village,
+          language: conversation.language,
+          symptomsDescription: conversation.data.symptomsDescription,
+          source: smsChannel
+        });
+      } catch (error) {
+        await conversation.save();
+        console.error('[SMS] Patient persistence failed:', error.message);
+        return {
+          conversation,
+          response: getMessages(conversation.language).registrationFailed,
+          persistenceFailed: true
+        };
+      }
+
+      conversation.state = CONVERSATION_STATES.COMPLETED;
+      return saveResponse(conversation, messageId, getMessages(conversation.language).completed);
+    }
 
     case CONVERSATION_STATES.COMPLETED:
       return saveResponse(conversation, messageId, getMessages(conversation.language).completed);

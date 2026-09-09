@@ -8,6 +8,7 @@ const ivrRoutes = require('./routes/ivr.routes');
 const testIvrRoutes = require('./routes/testIvr.routes');
 const healthCenterRoutes = require('./routes/healthCenter.routes');
 const referralRoutes = require('./routes/referral.routes');
+const smsRoutes = require('./routes/sms.routes');
 
 const app = express();
 const port = Number(process.env.PORT) || 5000;
@@ -23,6 +24,7 @@ app.get('/health', (req, res) => {
 });
 
 app.use('/api/channels/whatsapp', whatsappRoutes);
+app.use('/api/channels/sms', smsRoutes);
 app.use('/api/ivr', ivrRoutes);
 app.use('/api/health-centers', healthCenterRoutes);
 app.use('/api/referrals', referralRoutes);

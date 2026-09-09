@@ -1,12 +1,12 @@
 const Patient = require('../models/Patient');
-const { normalizeWhatsAppNumber } = require('../config/twilio');
+const { normalizePhoneNumber } = require('../config/twilio');
 
 const allowedGenders = new Set(['male', 'female', 'other', 'prefer_not_to_say']);
 const allowedLanguages = new Set(['te', 'hi', 'en']);
-const allowedSources = new Set(['WHATSAPP', 'IVR']);
+const allowedSources = new Set(['WHATSAPP', 'IVR', 'SMS']);
 
 function normalizePhone(phone) {
-  return normalizeWhatsAppNumber(phone).replace(/^whatsapp:/, '');
+  return normalizePhoneNumber(phone);
 }
 
 function validatePatientData(patientData) {

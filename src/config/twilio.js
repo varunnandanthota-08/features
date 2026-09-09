@@ -10,23 +10,28 @@ const {
 const isTwilioConfigured = Boolean(accountSid && authToken && whatsappNumber);
 const twilioClient = isTwilioConfigured ? twilio(accountSid, authToken) : null;
 
-function normalizeWhatsAppNumber(phone) {
+function normalizePhoneNumber(phone) {
   if (typeof phone !== 'string') {
-    throw new TypeError('WhatsApp phone number must be a string');
+    throw new TypeError('Phone number must be a string');
   }
 
-  const normalizedPhone = phone.trim().replace(/^whatsapp:/i, '');
+  const normalizedPhone = phone.trim().replace(/^(?:whatsapp|sms):/i, '');
   const e164PhonePattern = /^\+[1-9]\d{7,14}$/;
 
   if (!e164PhonePattern.test(normalizedPhone)) {
-    throw new Error('WhatsApp phone number must use E.164 format');
+    throw new Error('Phone number must use E.164 format');
   }
 
-  return `whatsapp:${normalizedPhone}`;
+  return normalizedPhone;
+}
+
+function normalizeWhatsAppNumber(phone) {
+  return `whatsapp:${normalizePhoneNumber(phone)}`;
 }
 
 module.exports = {
   isTwilioConfigured,
+  normalizePhoneNumber,
   normalizeWhatsAppNumber,
   twilioClient,
   whatsappNumber,

@@ -51,6 +51,15 @@ describe('patient service', () => {
     });
   });
 
+  test('creates an SMS patient with SMS source', async () => {
+    await createOrUpdatePatient({ ...validPatient, source: 'SMS' });
+
+    expect(await findByPhone(validPatient.phone)).toMatchObject({
+      phone: '+919876543210',
+      source: 'SMS'
+    });
+  });
+
   test('updates an existing phone without creating a duplicate', async () => {
     await createOrUpdatePatient({ ...validPatient, age: 50 });
     await createOrUpdatePatient({ ...validPatient, age: 52 });
@@ -59,11 +68,13 @@ describe('patient service', () => {
     expect((await findByPhone(validPatient.phone)).age).toBe(52);
   });
 
-  test('normalizes WhatsApp phone representations to one patient', async () => {
+  test('normalizes provider phone representations to one patient', async () => {
     await createOrUpdatePatient(validPatient);
     await createOrUpdatePatient({ ...validPatient, phone: 'whatsapp:+919876543210' });
+    await createOrUpdatePatient({ ...validPatient, phone: 'sms:+919876543210' });
 
     expect(normalizePhone('whatsapp:+919876543210')).toBe('+919876543210');
+    expect(normalizePhone('sms:+919876543210')).toBe('+919876543210');
     expect(mockPatients.size).toBe(1);
   });
 

@@ -59,5 +59,13 @@ conversationSchema.index(
     partialFilterExpression: { channel: 'IVR', callSid: { $type: 'string' } }
   }
 );
+conversationSchema.index(
+  { phone: 1, channel: 1 },
+  {
+    name: 'sms_phone_channel_unique',
+    unique: true,
+    partialFilterExpression: { channel: 'SMS' }
+  }
+);
 
 module.exports = mongoose.model('Conversation', conversationSchema);
