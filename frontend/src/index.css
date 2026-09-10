@@ -1,0 +1,52 @@
+:root {
+  font-family: Georgia, 'Times New Roman', serif;
+  color: #18312f;
+  background: #f6f8f3;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+
+button, a { font: inherit; }
+
+a { color: inherit; text-decoration: none; }
+
+.app-shell { display: grid; grid-template-columns: 17rem minmax(0, 1fr); min-height: 100vh; }
+
+.sidebar { background: #18312f; color: #f6f8f3; display: flex; flex-direction: column; padding: 2rem 1.35rem 1.5rem; }
+
+.brand-mark { align-items: center; background: #e8c66a; color: #18312f; display: flex; font-family: 'Trebuchet MS', sans-serif; font-size: .8rem; font-weight: 700; height: 2.6rem; justify-content: center; letter-spacing: .08em; margin-bottom: 1.1rem; width: 2.6rem; }
+
+.brand-kicker, .brand-name { margin: 0; }
+.brand-kicker { color: #9ec4b8; font-family: 'Trebuchet MS', sans-serif; font-size: .72rem; letter-spacing: .13em; text-transform: uppercase; }
+.brand-name { font-size: 1.35rem; margin-top: .2rem; }
+
+.main-nav { display: grid; gap: .35rem; margin-top: 3rem; }
+.nav-link { border-left: 3px solid transparent; color: #b9d0c9; font-family: 'Trebuchet MS', sans-serif; font-size: .86rem; padding: .75rem .8rem; }
+.nav-link:hover, .nav-link.active { background: rgba(255,255,255,.08); border-left-color: #e8c66a; color: #fff; }
+.sidebar-note { color: #71988f; font-family: 'Trebuchet MS', sans-serif; font-size: .72rem; margin: auto 0 0; }
+
+.main-content { background: radial-gradient(circle at 85% 0%, #f4e7d8 0, transparent 32rem), #f6f8f3; min-width: 0; padding: 4rem clamp(1.25rem, 6vw, 6rem); }
+.home-page, .placeholder-page { max-width: 62rem; }
+.eyebrow { color: #176b5b; font-family: 'Trebuchet MS', sans-serif; font-size: .72rem; font-weight: 700; letter-spacing: .13em; margin: 0 0 .7rem; text-transform: uppercase; }
+h1 { font-size: clamp(2.5rem, 6vw, 5rem); letter-spacing: 0; line-height: .98; margin: 0; max-width: 42rem; }
+.intro { color: #637572; font-family: 'Trebuchet MS', sans-serif; line-height: 1.6; margin: 1.1rem 0 0; max-width: 42rem; }
+.foundation-grid { display: grid; gap: 1rem; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 4rem; }
+.foundation-panel { background: rgba(255,255,255,.78); border: 1px solid #dce5df; min-height: 13rem; padding: 1.2rem; }
+.accent-panel { background: #dcefe8; border-color: #9ec4b8; }
+.panel-index { color: #9a6500; font-family: 'Trebuchet MS', sans-serif; font-size: .75rem; font-weight: 700; }
+.foundation-panel h2 { font-size: 1.35rem; margin: 3.5rem 0 .6rem; }
+.foundation-panel p { color: #637572; font-family: 'Trebuchet MS', sans-serif; font-size: .88rem; line-height: 1.5; margin: 0; }
+
+@media (max-width: 760px) {
+  .app-shell { grid-template-columns: 1fr; }
+  .sidebar { padding: 1.25rem; }
+  .brand-mark { margin-bottom: .75rem; }
+  .main-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 1.5rem; }
+  .sidebar-note { margin-top: 1.5rem; }
+  .main-content { padding: 2.5rem 1.25rem 3rem; }
+  .foundation-grid { grid-template-columns: 1fr; margin-top: 2.5rem; }
+}
