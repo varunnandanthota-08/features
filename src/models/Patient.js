@@ -41,7 +41,7 @@ const patientSchema = new mongoose.Schema({
     type: String,
     required: true,
     default: 'WHATSAPP',
-    enum: ['WHATSAPP', 'IVR', 'SMS']
+    enum: ['WHATSAPP', 'IVR', 'SMS', 'DASHBOARD']
   }
 }, {
   timestamps: true

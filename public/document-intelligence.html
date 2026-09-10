@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Document Intelligence | Rural Health</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #18312f;
+      --muted: #637572;
+      --paper: #f6f8f3;
+      --panel: #fff;
+      --line: #dce5df;
+      --accent: #176b5b;
+      --accent-dark: #0f5145;
+      --accent-soft: #dcefe8;
+      --warning: #9a6500;
+      --warning-soft: #fff4d6;
+      --danger: #9c3d38;
+      --danger-soft: #f8dfdc;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      background: radial-gradient(circle at 8% 0%, #e4f1e8 0, transparent 34rem), var(--paper);
+      color: var(--ink);
+      font-family: Georgia, 'Times New Roman', serif;
+      margin: 0;
+      min-height: 100vh;
+    }
+    main { margin: 0 auto; max-width: 74rem; padding: 2.5rem 1.25rem 4rem; }
+    header { margin-bottom: 1.5rem; }
+    .eyebrow { color: var(--accent); font-family: 'Trebuchet MS', sans-serif; font-size: .72rem; font-weight: bold; letter-spacing: .13em; margin: 0 0 .55rem; text-transform: uppercase; }
+    h1 { font-size: clamp(2.2rem, 6vw, 4rem); letter-spacing: 0; line-height: .98; margin: 0; max-width: 38rem; }
+    .lede { color: var(--muted); font-family: 'Trebuchet MS', sans-serif; line-height: 1.5; margin: .8rem 0 0; max-width: 44rem; }
+    .shell { display: grid; gap: 1rem; grid-template-columns: 18rem minmax(0, 1fr); }
+    .panel { background: var(--panel); border: 1px solid var(--line); box-shadow: 0 1.5rem 3rem rgba(24, 49, 47, .08); padding: 1.15rem; }
+    .steps { display: grid; gap: .35rem; align-content: start; }
+    .step { border-left: 3px solid var(--line); color: var(--muted); font-family: 'Trebuchet MS', sans-serif; padding: .65rem .75rem; }
+    .step.active { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+    .step strong { display: block; font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; }
+    .step span { display: block; font-size: .85rem; margin-top: .18rem; }
+    .screen { min-width: 0; }
+    .screen-title { align-items: start; display: flex; gap: 1rem; justify-content: space-between; margin-bottom: 1rem; }
+    h2 { font-size: 1.65rem; line-height: 1.1; margin: 0; }
+    h3 { font-size: 1.15rem; margin: 0 0 .8rem; }
+    .screen-title p { color: var(--muted); font-family: 'Trebuchet MS', sans-serif; font-size: .85rem; margin: .3rem 0 0; }
+    .type-grid { display: grid; gap: .7rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .type-button { background: var(--panel); border: 1px solid var(--line); border-radius: .35rem; color: var(--ink); cursor: pointer; min-height: 5.5rem; padding: .9rem; text-align: left; }
+    .type-button:hover, .type-button.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+    .type-button strong { display: block; font-family: 'Trebuchet MS', sans-serif; font-size: .88rem; }
+    .type-button span { color: var(--muted); display: block; font-size: .86rem; line-height: 1.35; margin-top: .4rem; }
+    label { color: var(--muted); display: grid; font-family: 'Trebuchet MS', sans-serif; font-size: .73rem; font-weight: bold; gap: .35rem; margin-bottom: .85rem; text-transform: uppercase; }
+    input, textarea, select, button { border: 1px solid var(--line); border-radius: .35rem; font: inherit; min-height: 2.7rem; padding: .55rem .7rem; }
+    input, textarea, select { background: var(--panel); color: var(--ink); width: 100%; }
+    textarea { min-height: 5rem; resize: vertical; }
+    button { background: var(--accent); border-color: var(--accent); color: white; cursor: pointer; font-family: 'Trebuchet MS', sans-serif; font-weight: bold; }
+    button:hover { background: var(--accent-dark); }
+    button:disabled { cursor: wait; opacity: .55; }
+    button.secondary { background: transparent; border-color: var(--line); color: var(--ink); }
+    .upload-grid { display: grid; gap: .85rem; grid-template-columns: 1fr 1fr; }
+    .upload-grid .full { grid-column: 1 / -1; }
+    .file-name { color: var(--muted); font-family: 'Trebuchet MS', sans-serif; font-size: .85rem; margin: -.25rem 0 .8rem; }
+    .hint { color: var(--muted); font-family: 'Trebuchet MS', sans-serif; font-size: .8rem; line-height: 1.45; margin: 0 0 1rem; }
+    .actions { border-top: 1px solid var(--line); display: flex; gap: .6rem; justify-content: end; margin-top: 1rem; padding-top: 1rem; }
+    .notice { background: var(--accent-soft); border-left: 3px solid var(--accent); color: var(--ink); font-family: 'Trebuchet MS', sans-serif; font-size: .85rem; line-height: 1.45; margin-bottom: 1rem; padding: .75rem .85rem; }
+    .notice.warning { background: var(--warning-soft); border-color: var(--warning); }
+    .result-grid { display: grid; gap: .75rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .field-card { border: 1px solid var(--line); padding: .75rem; }
+    .field-card.warning { background: var(--warning-soft); border-color: #e3c36d; }
+    .field-card.missing { background: var(--danger-soft); border-color: #d99b95; }
+    .field-head { align-items: center; display: flex; gap: .5rem; justify-content: space-between; margin-bottom: .4rem; }
+    .field-head label { color: var(--ink); font-size: .78rem; margin: 0; }
+    .confidence { color: var(--accent); font-family: 'Trebuchet MS', sans-serif; font-size: .75rem; font-weight: bold; white-space: nowrap; }
+    .confidence.warning { color: var(--warning); }
+    .confidence.missing { color: var(--danger); }
+    .field-help { color: var(--danger); font-family: 'Trebuchet MS', sans-serif; font-size: .75rem; margin: .35rem 0 0; }
+    .result-meta { color: var(--muted); font-family: 'Trebuchet MS', sans-serif; font-size: .8rem; margin: 0 0 1rem; }
+    .success { background: var(--accent-soft); border-left: 4px solid var(--accent); font-family: 'Trebuchet MS', sans-serif; line-height: 1.5; padding: 1rem; }
+    .error { background: var(--danger-soft); border-left: 4px solid var(--danger); color: var(--danger); font-family: 'Trebuchet MS', sans-serif; line-height: 1.45; padding: .75rem .85rem; }
+    .hidden { display: none !important; }
+    @media (max-width: 700px) {
+      main { padding: 1.5rem .75rem 2.5rem; }
+      .shell { grid-template-columns: 1fr; }
+      .steps { grid-template-columns: repeat(3, 1fr); }
+      .step { border-left: 0; border-top: 3px solid var(--line); padding: .55rem .45rem; }
+      .step.active { border-color: var(--accent); }
+      .step span { font-size: .75rem; }
+      .result-grid, .upload-grid { grid-template-columns: 1fr; }
+      .upload-grid .full { grid-column: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">Rural Health / Document Intelligence</p>
+      <h1>Review a document before it becomes a record.</h1>
+      <p class="lede">Upload a registration document or medical report. OCR results are drafts until you review every field and explicitly verify them.</p>
+    </header>
+
+    <div class="shell">
+      <nav class="panel steps" aria-label="Document workflow">
+        <div class="step active" data-step="1"><strong>01</strong><span>Choose type</span></div>
+        <div class="step" data-step="2"><strong>02</strong><span>Upload document</span></div>
+        <div class="step" data-step="3"><strong>03</strong><span>Review and save</span></div>
+      </nav>
+
+      <section class="panel screen">
+        <div id="error" class="error hidden" role="alert"></div>
+        <div id="success" class="success hidden" role="status"></div>
+
+        <div id="upload-screen">
+          <div class="screen-title">
+            <div>
+              <h2>Start a document review</h2>
+              <p>Choose the document type before uploading.</p>
+            </div>
+          </div>
+          <div class="type-grid" role="group" aria-label="Document type">
+            <button type="button" class="type-button selected" data-type="PATIENT_REGISTRATION">
+              <strong>Patient Registration</strong>
+              <span>Identity and contact details for a patient record.</span>
+            </button>
+            <button type="button" class="type-button" data-type="MEDICAL_REPORT">
+              <strong>Medical Report</strong>
+              <span>Clinical report details to add to patient history.</span>
+            </button>
+          </div>
+          <form id="upload-form" class="upload-grid">
+            <label class="full" for="file">Document image or PDF
+              <input id="file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required>
+            </label>
+            <p id="file-name" class="file-name full">No file selected.</p>
+            <label id="patient-id-label" class="full hidden" for="patient-id">Patient ID
+              <input id="patient-id" autocomplete="off" placeholder="Required for a medical report">
+            </label>
+            <p class="hint full">The file is sent to the backend for extraction. Keep the original document available while reviewing the result.</p>
+            <div class="actions full">
+              <button type="submit" id="extract-button">Analyze document</button>
+            </div>
+          </form>
+        </div>
+
+        <div id="review-screen" class="hidden">
+          <div class="screen-title">
+            <div>
+              <h2>Review extracted information</h2>
+              <p id="review-type"></p>
+            </div>
+          </div>
+          <div class="notice warning">OCR output is a draft. Check every field, correct anything needed, then choose <strong>Verify &amp; Save</strong>.</div>
+          <p class="result-meta" id="document-meta"></p>
+          <form id="review-form">
+            <div id="fields" class="result-grid"></div>
+            <label id="review-patient-id-label" class="hidden" for="review-patient-id">Patient ID
+              <input id="review-patient-id" autocomplete="off">
+            </label>
+            <label for="verified-by">Verified by (optional)
+              <input id="verified-by" autocomplete="off" placeholder="Health worker name or ID">
+            </label>
+            <div class="actions">
+              <button type="button" class="secondary" id="cancel-button">Cancel</button>
+              <button type="submit" id="verify-button">Verify &amp; Save</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const state = { documentType: 'PATIENT_REGISTRATION', documentId: null, patientId: '', fields: {} };
+    const fieldLabels = {
+      name: 'Name', age: 'Age', gender: 'Gender', phone: 'Phone', village: 'Village', address: 'Address',
+      patientName: 'Patient name', reportDate: 'Report date', diagnosis: 'Diagnosis', bloodPressure: 'Blood pressure',
+      medications: 'Medications', doctor: 'Doctor', otherRelevantInformation: 'Other relevant information'
+    };
+    const registrationFields = ['name', 'age', 'gender', 'phone', 'village', 'address'];
+    const reportFields = ['patientName', 'reportDate', 'diagnosis', 'bloodPressure', 'medications', 'doctor', 'otherRelevantInformation'];
+    const $ = selector => document.querySelector(selector);
+
+    function showError(message) {
+      $('#error').textContent = message;
+      $('#error').classList.remove('hidden');
+      $('#success').classList.add('hidden');
+    }
+
+    function clearMessages() {
+      $('#error').classList.add('hidden');
+      $('#success').classList.add('hidden');
+    }
+
+    function setStep(step) {
+      document.querySelectorAll('.step').forEach(item => item.classList.toggle('active', item.dataset.step === String(step)));
+    }
+
+    function setBusy(button, busy, label) {
+      button.disabled = busy;
+      button.textContent = busy ? label : button.dataset.label;
+    }
+
+    function selectedFields() {
+      return state.documentType === 'PATIENT_REGISTRATION' ? registrationFields : reportFields;
+    }
+
+    function displayValue(value) {
+      if (Array.isArray(value)) return value.join('\n');
+      return value === null || value === undefined ? '' : String(value);
+    }
+
+    function confidenceFor(field) {
+      const value = state.fields[field];
+      return value && typeof value === 'object' && 'value' in value ? value.confidence : null;
+    }
+
+    function valueFor(field) {
+      const value = state.fields[field];
+      return value && typeof value === 'object' && 'value' in value ? value.value : value;
+    }
+
+    function renderFields() {
+      $('#fields').replaceChildren();
+      selectedFields().forEach(field => {
+        const value = valueFor(field);
+        const confidence = confidenceFor(field);
+        const missing = value === null || value === undefined || value === '';
+        const warning = !missing && (typeof confidence !== 'number' || confidence < .85);
+        const card = document.createElement('div');
+        card.className = `field-card${missing ? ' missing' : warning ? ' warning' : ''}`;
+        const head = document.createElement('div');
+        head.className = 'field-head';
+        const label = document.createElement('label');
+        label.textContent = fieldLabels[field];
+        const confidenceLabel = document.createElement('span');
+        confidenceLabel.className = `confidence${missing ? ' missing' : warning ? ' warning' : ''}`;
+        confidenceLabel.textContent = missing ? '⚠ Needs entry' : `✓ ${typeof confidence === 'number' ? `${Math.round(confidence * 100)}%` : 'Review'}`;
+        head.append(label, confidenceLabel);
+        const input = document.createElement(field === 'address' || field === 'otherRelevantInformation' || field === 'medications' ? 'textarea' : 'input');
+        input.name = field;
+        input.value = displayValue(value);
+        input.required = ['name', 'age', 'gender', 'phone', 'diagnosis', 'patientName'].includes(field);
+        if (field === 'medications') input.placeholder = 'One medication per line';
+        card.append(head, input);
+        if (missing) {
+          const help = document.createElement('p');
+          help.className = 'field-help';
+          help.textContent = 'Could not read clearly. Enter this field before saving.';
+          card.appendChild(help);
+        }
+        $('#fields').appendChild(card);
+      });
+    }
+
+    function chooseType(button) {
+      state.documentType = button.dataset.type;
+      document.querySelectorAll('.type-button').forEach(item => item.classList.toggle('selected', item === button));
+      $('#patient-id-label').classList.toggle('hidden', state.documentType !== 'MEDICAL_REPORT');
+    }
+
+    async function readError(response) {
+      try {
+        const result = await response.json();
+        return result.message || 'The request could not be completed.';
+      } catch (_) {
+        return 'The request could not be completed.';
+      }
+    }
+
+    document.querySelectorAll('.type-button').forEach(button => button.addEventListener('click', () => chooseType(button)));
+    $('#file').addEventListener('change', event => {
+      $('#file-name').textContent = event.target.files[0]?.name || 'No file selected.';
+    });
+
+    $('#upload-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      clearMessages();
+      const file = $('#file').files[0];
+      if (!file) return showError('Choose a document before analyzing it.');
+      const form = new FormData();
+      form.append('file', file);
+      form.append('documentType', state.documentType);
+      if ($('#patient-id').value.trim()) form.append('patientId', $('#patient-id').value.trim());
+      const button = $('#extract-button');
+      button.dataset.label = 'Analyze document';
+      setBusy(button, true, 'Analyzing document...');
+      try {
+        const response = await fetch('/api/documents/extract', { method: 'POST', body: form });
+        if (!response.ok) throw new Error(await readError(response));
+        const result = await response.json();
+        state.documentId = result.documentId;
+        state.patientId = $('#patient-id').value.trim();
+        state.fields = result.extractedData || {};
+        $('#review-type').textContent = state.documentType === 'PATIENT_REGISTRATION' ? 'Patient registration' : 'Medical report';
+        $('#document-meta').textContent = `Draft ${result.documentId} · Extraction complete`;
+        $('#review-patient-id').value = state.patientId;
+        $('#review-patient-id-label').classList.toggle('hidden', state.documentType !== 'MEDICAL_REPORT');
+        renderFields();
+        $('#upload-screen').classList.add('hidden');
+        $('#review-screen').classList.remove('hidden');
+        setStep(3);
+      } catch (error) {
+        showError(error.message || 'Document extraction failed.');
+      } finally {
+        setBusy(button, false, 'Analyze document');
+      }
+    });
+
+    $('#review-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      clearMessages();
+      const form = new FormData(event.target);
+      const fields = {};
+      selectedFields().forEach(field => {
+        const raw = form.get(field) || '';
+        fields[field] = field === 'medications' ? raw.split('\n').map(item => item.trim()).filter(Boolean) : raw.trim();
+      });
+      if (state.documentType === 'PATIENT_REGISTRATION' && (!fields.name || !fields.age || !fields.gender || !fields.phone || (!fields.village && !fields.address))) {
+        return showError('Complete the required patient registration fields before saving.');
+      }
+      const patientId = state.documentType === 'MEDICAL_REPORT' ? $('#review-patient-id').value.trim() : state.patientId;
+      if (state.documentType === 'MEDICAL_REPORT' && !patientId) return showError('Patient ID is required for a medical report.');
+      const button = $('#verify-button');
+      button.dataset.label = 'Verify & Save';
+      setBusy(button, true, 'Saving verified data...');
+      try {
+        const response = await fetch('/api/documents/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ documentId: state.documentId, patientId: patientId || undefined, fields, verifiedBy: $('#verified-by').value.trim() || undefined })
+        });
+        if (!response.ok) throw new Error(await readError(response));
+        const result = await response.json();
+        $('#success').textContent = state.documentType === 'PATIENT_REGISTRATION'
+          ? 'Document verified and saved successfully. The patient record was created or updated.'
+          : 'Document verified and saved successfully. The report was added to patient history.';
+        $('#success').classList.remove('hidden');
+        $('#review-form').classList.add('hidden');
+        setStep(3);
+      } catch (error) {
+        showError(error.message || 'Verification failed. Your data was not saved.');
+      } finally {
+        setBusy(button, false, 'Verify & Save');
+      }
+    });
+
+    $('#cancel-button').addEventListener('click', () => {
+      state.documentId = null;
+      state.fields = {};
+      $('#review-screen').classList.add('hidden');
+      $('#upload-screen').classList.remove('hidden');
+      $('#review-form').classList.remove('hidden');
+      $('#file').value = '';
+      $('#file-name').textContent = 'No file selected.';
+      clearMessages();
+      setStep(1);
+    });
+  </script>
+</body>
+</html>

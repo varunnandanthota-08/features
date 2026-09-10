@@ -3,7 +3,7 @@ const { normalizePhoneNumber } = require('../config/twilio');
 
 const allowedGenders = new Set(['male', 'female', 'other', 'prefer_not_to_say']);
 const allowedLanguages = new Set(['te', 'hi', 'en']);
-const allowedSources = new Set(['WHATSAPP', 'IVR', 'SMS']);
+const allowedSources = new Set(['WHATSAPP', 'IVR', 'SMS', 'DASHBOARD']);
 
 function normalizePhone(phone) {
   return normalizePhoneNumber(phone);

@@ -60,6 +60,15 @@ describe('patient service', () => {
     });
   });
 
+  test('creates a Dashboard patient with DASHBOARD source', async () => {
+    await createOrUpdatePatient({ ...validPatient, source: 'DASHBOARD' });
+
+    expect(await findByPhone(validPatient.phone)).toMatchObject({
+      phone: '+919876543210',
+      source: 'DASHBOARD'
+    });
+  });
+
   test('updates an existing phone without creating a duplicate', async () => {
     await createOrUpdatePatient({ ...validPatient, age: 50 });
     await createOrUpdatePatient({ ...validPatient, age: 52 });
@@ -85,6 +94,12 @@ describe('patient service', () => {
 
   test('rejects whitespace-only required text before persistence', async () => {
     await expect(createOrUpdatePatient({ ...validPatient, name: '   ' })).rejects.toThrow();
+    expect(Patient.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('rejects unsupported patient sources before persistence', async () => {
+    await expect(createOrUpdatePatient({ ...validPatient, source: 'PORTAL' }))
+      .rejects.toThrow('Patient source is invalid');
     expect(Patient.findOneAndUpdate).not.toHaveBeenCalled();
   });
 });
