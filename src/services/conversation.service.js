@@ -7,6 +7,7 @@ const teMessages = require('../messages/te');
 const { createOrUpdatePatient, ensureEmergencyPatient } = require('./patient.service');
 const { createEmergencyCase, getPatientLocation } = require('./emergency.service');
 const { geocodeLocation } = require('./geocoding.service');
+const { createCase } = require('./case.service');
 const { CHANNEL_MENU_OPTIONS, languageForMenuOption, isMenuOption } = require('../constants/channelMenu');
 
 const messagesByLanguage = { en: enMessages, hi: hiMessages, te: teMessages };
@@ -27,6 +28,16 @@ function emergencyResponseMessage(language, result) {
     return `${getMessages(language).emergencyRegistered} Assigned Health Centre: ${facility.healthCenterId} - ${facility.name}.`;
   }
   return getMessages(language).emergencyRegistered;
+}
+
+async function createNormalCaseFromConversation(conversation, patient) {
+  if (!patient?._id || !conversation.data.symptomsDescription) return;
+  await createCase({
+    patientId: patient._id,
+    source: conversation.channel === smsChannel ? 'SMS' : 'WHATSAPP',
+    complaint: conversation.data.symptomsDescription,
+    location: patient.location
+  });
 }
 
 async function createChannelEmergency(conversation) {
@@ -222,7 +233,7 @@ async function processMessage({ phone, message, messageId, channel: messageChann
       }
 
       try {
-        await createOrUpdatePatient({
+        const patient = await createOrUpdatePatient({
           phone: conversation.phone,
           name: conversation.data.name,
           age: conversation.data.age,
@@ -231,6 +242,7 @@ async function processMessage({ phone, message, messageId, channel: messageChann
           language: conversation.language,
           symptomsDescription: conversation.data.symptomsDescription
         });
+        await createNormalCaseFromConversation(conversation, patient);
       } catch (error) {
         await conversation.save();
         console.error('[WhatsApp] Patient persistence failed:', error.message);
@@ -259,7 +271,7 @@ async function processMessage({ phone, message, messageId, channel: messageChann
       }
 
       try {
-        await createOrUpdatePatient({
+        const patient = await createOrUpdatePatient({
           phone: conversation.phone,
           name: conversation.data.name,
           age: conversation.data.age,
@@ -269,6 +281,7 @@ async function processMessage({ phone, message, messageId, channel: messageChann
           symptomsDescription: conversation.data.symptomsDescription,
           source: smsChannel
         });
+        await createNormalCaseFromConversation(conversation, patient);
       } catch (error) {
         await conversation.save();
         console.error('[SMS] Patient persistence failed:', error.message);

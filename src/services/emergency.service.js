@@ -4,6 +4,7 @@ const EmergencyCase = require('../models/EmergencyCase');
 const HealthCenter = require('../models/HealthCenter');
 const Patient = require('../models/Patient');
 const { findByPhone } = require('./patient.service');
+const { escalateCase, ESCALATION_STATUSES } = require('./escalation.service');
 
 const emergencySources = new Set(['PHONE_IVR', 'WHATSAPP', 'SMS', 'HEALTH_WORKER', 'DASHBOARD', 'AUTOMATIC_DETECTION']);
 const emergencyStatuses = new Set(['REGISTERED', 'ALERTED', 'ACKNOWLEDGED', 'RESPONDING', 'REFERRED', 'ESCALATED', 'RESOLVED']);
@@ -54,7 +55,7 @@ function facilityData(healthCenter, distance) {
   };
 }
 
-async function findSuitableHealthCenter({ location, village } = {}) {
+async function findSuitableHealthCenter({ location, village, excludeHealthCenterId } = {}) {
   const healthCenters = await HealthCenter.find({});
   const candidates = healthCenters
     .map(healthCenter => {
@@ -64,6 +65,8 @@ async function findSuitableHealthCenter({ location, village } = {}) {
         && healthCenter.village.trim().toLowerCase() === village.trim().toLowerCase());
       return { healthCenter, availableCapacity, distance, villageMatch };
     })
+    .filter(candidate => !excludeHealthCenterId
+      || String(candidate.healthCenter._id) !== String(excludeHealthCenterId))
     .filter(candidate => candidate.availableCapacity > 0)
     .sort((first, second) => (
       Number(second.healthCenter.emergencyAvailable === true) - Number(first.healthCenter.emergencyAvailable === true)
@@ -158,6 +161,9 @@ async function getActiveEmergencies() {
       Patient.findById(plainEmergency.patientId),
       assignedHealthCenterId ? HealthCenter.findById(assignedHealthCenterId) : null
     ]);
+    const escalationTargetHealthCenter = plainEmergency.escalatedToHealthCenterId
+      ? await HealthCenter.findById(plainEmergency.escalatedToHealthCenterId)
+      : null;
     const patientLocation = {
       village: plainEmergency.locationLabel || patient?.location?.village || null,
       latitude: plainEmergency.location?.latitude,
@@ -167,6 +173,7 @@ async function getActiveEmergencies() {
       || (selectedHealthCenter ? 'ASSIGNED' : 'PENDING');
 
     return {
+      kind: 'EMERGENCY',
       caseId: plainEmergency.caseId,
       patient,
       reason: plainEmergency.reason,
@@ -180,11 +187,37 @@ async function getActiveEmergencies() {
       assignedHealthCenterId: assignedHealthCenterId || null,
       assignedHealthCenter: selectedHealthCenter,
       selectedHealthCenter,
+      escalatedFromHealthCenter: selectedHealthCenter,
+      escalationTargetHealthCenter,
+      escalationStatus: plainEmergency.escalationStatus || 'NOT_ESCALATED',
+      escalationLevel: plainEmergency.escalationLevel || 0,
+      escalatedAt: plainEmergency.escalatedAt || null,
+      escalationReason: plainEmergency.escalationReason || null,
+      escalatedFromHealthCenterId: plainEmergency.escalatedFromHealthCenterId || null,
+      escalatedToHealthCenterId: plainEmergency.escalatedToHealthCenterId || null,
+      escalatedToHealthWorkerId: plainEmergency.escalatedToHealthWorkerId || null,
+      escalationHistory: plainEmergency.escalationHistory || [],
+      targetSelectionRequired: plainEmergency.escalationStatus === 'ESCALATED'
+        && !plainEmergency.escalatedToHealthCenterId
+        && !plainEmergency.escalatedToHealthWorkerId,
+      escalationTargetMessage: plainEmergency.escalationStatus === 'ESCALATED'
+        && !plainEmergency.escalatedToHealthCenterId
+        && !plainEmergency.escalatedToHealthWorkerId
+        ? 'Escalation required - target selection pending'
+        : null,
       createdAt: plainEmergency.createdAt,
       acknowledgedAt: plainEmergency.acknowledgedAt,
       escalationLevel: plainEmergency.escalationLevel
     };
   }));
+}
+
+async function findEscalationTarget(caseRecord) {
+  if (!caseRecord?.assignedHealthCenterId) return { healthCenter: null, facility: null };
+  return findSuitableHealthCenter({
+    location: caseRecord.location,
+    excludeHealthCenterId: caseRecord.assignedHealthCenterId
+  });
 }
 
 async function acknowledgeEmergency(caseId, acknowledgedBy) {
@@ -194,21 +227,29 @@ async function acknowledgeEmergency(caseId, acknowledgedBy) {
   emergency.status = 'ACKNOWLEDGED';
   emergency.acknowledgedBy = acknowledgedBy.trim();
   emergency.acknowledgedAt = new Date();
+  if (emergency.escalationStatus === ESCALATION_STATUSES.ESCALATED) {
+    emergency.escalationStatus = ESCALATION_STATUSES.ACKNOWLEDGED_AFTER_ESCALATION;
+  }
   await emergency.save();
   return emergency;
 }
 
 async function escalateEmergency(caseId) {
   const emergency = await getEmergencyCase(caseId);
-  emergency.status = 'ESCALATED';
-  emergency.escalationLevel = (emergency.escalationLevel || 0) + 1;
-  await emergency.save();
-  return emergency;
+  const result = await escalateCase(emergency, new Date(), { targetSelector: findEscalationTarget });
+  const escalationTargetHealthCenter = result.case.escalatedToHealthCenterId
+    ? await HealthCenter.findById(result.case.escalatedToHealthCenterId)
+    : null;
+  return {
+    ...toPlainDocument(result.case),
+    escalationTargetHealthCenter
+  };
 }
 
 async function resolveEmergency(caseId) {
   const emergency = await getEmergencyCase(caseId);
   emergency.status = 'RESOLVED';
+  emergency.escalationStatus = ESCALATION_STATUSES.RESOLVED;
   await emergency.save();
   return emergency;
 }
@@ -217,6 +258,7 @@ module.exports = {
   createEmergencyCase,
   getPatientLocation,
   findSuitableHealthCenter,
+  findEscalationTarget,
   acknowledgeEmergency,
   escalateEmergency,
   resolveEmergency,

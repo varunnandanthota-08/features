@@ -11,6 +11,8 @@ const referralRoutes = require('./routes/referral.routes');
 const smsRoutes = require('./routes/sms.routes');
 const documentRoutes = require('./routes/document.routes');
 const emergencyRoutes = require('./routes/emergency.routes');
+const caseRoutes = require('./routes/case.routes');
+const { startEscalationMonitor, stopEscalationMonitor } = require('./services/escalation.monitor');
 
 const app = express();
 const port = Number(process.env.PORT) || 5000;
@@ -32,6 +34,7 @@ app.use('/api/ivr', ivrRoutes);
 app.use('/api/health-centers', healthCenterRoutes);
 app.use('/api/referrals', referralRoutes);
 app.use('/api/emergency', emergencyRoutes);
+app.use('/api/cases', caseRoutes);
 
 if (process.env.NODE_ENV !== 'production') {
   app.use('/api/test/whatsapp', testWhatsappRoutes);
@@ -59,9 +62,11 @@ async function startServer() {
     const databaseConfigured = await connectToDatabase();
     console.log(databaseConfigured ? '[MongoDB] Connected' : '[MongoDB] MONGODB_URI not configured; skipped connection');
 
-    app.listen(port, () => {
+    const server = app.listen(port, () => {
       console.log(`[Server] Listening on port ${port}`);
+      startEscalationMonitor();
     });
+    return server;
   } catch (error) {
     console.error('[MongoDB] Connection failed:', error.message);
     process.exitCode = 1;
@@ -69,7 +74,15 @@ async function startServer() {
 }
 
 if (require.main === module) {
-  startServer();
+  startServer().then(server => {
+    if (!server) return;
+    const shutdown = () => {
+      stopEscalationMonitor();
+      server.close();
+    };
+    process.once('SIGINT', shutdown);
+    process.once('SIGTERM', shutdown);
+  });
 }
 
 module.exports = { app, startServer };

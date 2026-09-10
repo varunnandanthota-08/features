@@ -5,6 +5,7 @@ const { normalizeWhatsAppNumber } = require('../config/twilio');
 const { createOrUpdatePatient } = require('./patient.service');
 const { createEmergencyCase, getPatientLocation } = require('./emergency.service');
 const { geocodeLocation } = require('./geocoding.service');
+const { createCase } = require('./case.service');
 const { languageForMenuOption } = require('../constants/channelMenu');
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -470,7 +471,7 @@ async function handleConfirm(req) {
     if (!session.language || required.some(field => !session.data[field])) {
       return { twiml: getFailureTwiml() };
     }
-    await createOrUpdatePatient({
+    const patient = await createOrUpdatePatient({
       phone: session.phone,
       name: session.data.name,
       age: session.data.age,
@@ -480,6 +481,14 @@ async function handleConfirm(req) {
       symptomsDescription: session.data.symptomsDescription,
       source: 'IVR'
     });
+    if (patient?._id) {
+      await createCase({
+        patientId: patient._id,
+        source: 'PHONE_IVR',
+        complaint: session.data.symptomsDescription,
+        location: patient.location
+      });
+    }
     session.state = CONVERSATION_STATES.IVR_COMPLETED;
     const response = new VoiceResponse();
     say(response, prompts[session.language].complete, session.language);

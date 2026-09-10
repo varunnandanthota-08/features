@@ -67,6 +67,12 @@
     .alert-actions .acknowledge:hover { background: var(--danger-dark); }
     .alert-actions .acknowledge:disabled { background: var(--danger); }
     .alert-error { color: var(--danger); font-family: 'Trebuchet MS', sans-serif; font-size: .82rem; margin: .7rem 0 0; }
+    .escalation-notifications { display: grid; gap: .75rem; margin-bottom: 1rem; }
+    .escalation-notification { background: var(--danger-soft); border: 2px solid var(--danger); box-shadow: 0 .8rem 2rem rgba(156, 61, 56, .16); padding: 1rem; }
+    .escalation-notification h2 { color: var(--danger-dark); font-family: 'Trebuchet MS', sans-serif; font-size: 1rem; letter-spacing: .04em; margin: 0 0 .7rem; text-transform: uppercase; }
+    .escalation-notification dl { display: grid; gap: .35rem; grid-template-columns: 8rem minmax(0, 1fr); margin: 0; }
+    .escalation-notification dt { color: var(--muted); font-family: 'Trebuchet MS', sans-serif; font-size: .72rem; font-weight: bold; text-transform: uppercase; }
+    .escalation-notification dd { margin: 0; }
     @media (max-width: 650px) {
       main { padding: 1.5rem .75rem 2.5rem; }
       .toolbar { align-items: stretch; }
@@ -99,12 +105,24 @@
     </section>
 
     <div id="status" class="status" role="status" aria-live="polite">Loading active emergencies...</div>
+    <section id="escalation-notifications" class="escalation-notifications" aria-live="assertive" aria-label="New escalation notifications"></section>
     <section id="alert-list" class="alert-list" aria-label="Active emergencies"></section>
   </main>
 
   <script>
-    const POLL_INTERVAL_MS = 5000;
-    const state = { emergencies: [], soundEnabled: false, soundContext: null, soundTimer: null, soundNodes: new Set() };
+    const NOTIFICATION_POLL_INTERVAL_MS = Number(window.NOTIFICATION_POLL_INTERVAL_MS) > 0
+      ? Number(window.NOTIFICATION_POLL_INTERVAL_MS) : 10000;
+    const state = {
+      emergencies: [],
+      soundEnabled: false,
+      soundContext: null,
+      soundTimer: null,
+      soundNodes: new Set(),
+      pollTimer: null,
+      hasLoaded: false,
+      seenEscalations: new Set(),
+      escalationNotifications: new Map()
+    };
     const $ = selector => document.querySelector(selector);
 
     function escapeHtml(value) {
@@ -130,11 +148,63 @@
     }
 
     function isAlerted(emergency) {
-      return emergency.status === 'ALERTED';
+      return emergency.kind !== 'CASE' && emergency.status === 'ALERTED';
     }
 
     function sortedEmergencies(emergencies) {
       return [...emergencies].sort((first, second) => Number(isAlerted(second)) - Number(isAlerted(first)));
+    }
+
+    function escalationKey(emergency) {
+      return [emergency.caseId, emergency.escalationLevel, emergency.escalatedAt, emergency.escalatedToHealthCenterId || 'NO_TARGET'].join(':');
+    }
+
+    function isEscalated(emergency) {
+      return emergency.escalationStatus === 'ESCALATED' && Number(emergency.escalationLevel) > 0;
+    }
+
+    function detectNewEscalations(emergencies) {
+      const newEscalations = [];
+      emergencies.filter(isEscalated).forEach(emergency => {
+        const key = escalationKey(emergency);
+        if (state.hasLoaded && !state.seenEscalations.has(key)) newEscalations.push(emergency);
+        state.seenEscalations.add(key);
+      });
+      return newEscalations;
+    }
+
+    function removeInactiveNotifications(emergencies) {
+      const activeIds = new Set(emergencies
+        .filter(emergency => emergency.status !== 'ACKNOWLEDGED' && emergency.status !== 'RESOLVED')
+        .map(emergency => emergency.caseId));
+      state.escalationNotifications.forEach((_, caseId) => {
+        if (!activeIds.has(caseId)) state.escalationNotifications.delete(caseId);
+      });
+    }
+
+    function renderEscalationNotifications() {
+      const list = $('#escalation-notifications');
+      list.replaceChildren();
+      state.escalationNotifications.forEach(emergency => {
+        const original = emergency.escalatedFromHealthCenter || emergency.assignedHealthCenter || emergency.selectedHealthCenter;
+        const target = emergency.escalationTargetHealthCenter;
+        const patientName = emergency.patient?.name || 'Patient information unavailable';
+        const complaint = emergency.complaint || emergency.reason;
+        const originalName = original ? `${original.healthCenterId || 'Health centre'} - ${original.name || 'Unnamed health centre'}` : 'Not available';
+        const targetName = target
+          ? `${target.healthCenterId || 'Health centre'} - ${target.name || 'Unnamed health centre'}`
+          : 'Escalation target unavailable';
+        const card = document.createElement('article');
+        card.className = 'escalation-notification';
+        card.innerHTML = `<h2>${emergency.kind === 'CASE' ? 'Case escalated' : 'Emergency case escalated'}</h2><dl>
+          <dt>Patient</dt><dd>${escapeHtml(patientName)}</dd>
+          <dt>Escalated from</dt><dd>${escapeHtml(originalName)}</dd>
+          <dt>Escalated to</dt><dd>${escapeHtml(targetName)}</dd>
+          <dt>Reason</dt><dd>${escapeHtml(emergency.escalationReason || 'No acknowledgement within SLA')}</dd>
+          <dt>Level</dt><dd>${escapeHtml(emergency.escalationLevel)}</dd>
+        </dl>`;
+        list.appendChild(card);
+      });
     }
 
     function render() {
@@ -153,24 +223,32 @@
         card.dataset.caseId = emergency.caseId;
         const patientName = emergency.patient?.name || 'Patient information unavailable';
         const facility = emergency.assignedHealthCenter || emergency.selectedHealthCenter;
+        const escalationTarget = emergency.escalationTargetHealthCenter;
+        const currentResponsible = escalationTarget || facility;
         const assigned = emergency.assignmentStatus === 'ASSIGNED' || (!emergency.assignmentStatus && facility);
         const facilityName = assigned && facility
           ? `${facility.healthCenterId || 'Health centre'} - ${facility.name || 'Unnamed health centre'}`
           : 'ASSIGNMENT PENDING';
         card.innerHTML = `
           <div class="alert-header">
-            <div class="alert-title"><span class="alert-icon" aria-hidden="true">&#9888;</span><h2>${alerted ? 'CRITICAL EMERGENCY' : 'Emergency case'}</h2></div>
+            <div class="alert-title"><span class="alert-icon" aria-hidden="true">&#9888;</span><h2>${emergency.kind === 'CASE' ? 'Health complaint' : alerted ? 'CRITICAL EMERGENCY' : 'Emergency case'}</h2></div>
             <span class="badge ${alerted ? 'alerted' : 'acknowledged'}">${escapeHtml(emergency.status)}</span>
           </div>
           <div class="alert-grid">
             <div class="detail"><strong>Patient</strong><p>${escapeHtml(patientName)}</p></div>
             <div class="detail"><strong>Source</strong><p>${escapeHtml(emergency.source)}</p></div>
-            <div class="detail"><strong>Reason</strong><p>${escapeHtml(emergency.reason)}</p></div>
+            <div class="detail"><strong>${emergency.kind === 'CASE' ? 'Complaint' : 'Reason'}</strong><p>${escapeHtml(complaint)}</p></div>
             <div class="detail"><strong>Patient location</strong><p>${escapeHtml(locationText(emergency))}</p></div>
             <div class="detail"><strong>Assigned health centre</strong><p>${escapeHtml(facilityName)}</p></div>
             <div class="detail"><strong>Assignment status</strong><p>${escapeHtml(emergency.assignmentStatus || (facility ? 'ASSIGNED' : 'ASSIGNMENT PENDING'))}</p></div>
             <div class="detail"><strong>Created</strong><p>${escapeHtml(formatDate(emergency.createdAt))}</p></div>
             <div class="detail"><strong>Alert status</strong><p>${escapeHtml(emergency.status)}</p></div>
+            <div class="detail"><strong>Escalation status</strong><p>${escapeHtml(emergency.escalationStatus || 'NOT_ESCALATED')}</p></div>
+            <div class="detail"><strong>Escalation level</strong><p>${escapeHtml(emergency.escalationLevel || 0)}</p></div>
+            <div class="detail"><strong>Escalation reason</strong><p>${escapeHtml(emergency.escalationReason || 'Not escalated')}</p></div>
+            <div class="detail"><strong>Escalated from</strong><p>${escapeHtml(facility ? `${facility.healthCenterId || ''} - ${facility.name || ''}` : 'Not available')}</p></div>
+            <div class="detail"><strong>Escalated to</strong><p>${escapeHtml(escalationTarget ? `${escalationTarget.healthCenterId || ''} - ${escalationTarget.name || ''}` : emergency.escalationTargetMessage || 'Target selection required')}</p></div>
+            <div class="detail"><strong>Current responsible HC</strong><p>${escapeHtml(currentResponsible ? `${currentResponsible.healthCenterId || ''} - ${currentResponsible.name || ''}` : 'Not assigned')}</p></div>
           </div>
           <div class="alert-actions">
             <button type="button" class="secondary map-button">View Map</button>
@@ -199,12 +277,25 @@
 
     async function loadEmergencies() {
       try {
-        const response = await fetch('/api/emergency/active');
-        if (!response.ok) throw new Error(await readError(response));
-        const result = await response.json();
-        state.emergencies = Array.isArray(result.data) ? result.data : [];
+        const [emergencyResponse, caseResponse] = await Promise.all([
+          fetch('/api/emergency/active'),
+          fetch('/api/cases/active')
+        ]);
+        if (!emergencyResponse.ok) throw new Error(await readError(emergencyResponse));
+        const emergencyResult = await emergencyResponse.json();
+        const caseResult = caseResponse.ok ? await caseResponse.json() : { data: [] };
+        state.emergencies = [
+          ...(Array.isArray(emergencyResult.data) ? emergencyResult.data : []),
+          ...(Array.isArray(caseResult.data) ? caseResult.data : [])
+        ];
+        const newEscalations = detectNewEscalations(state.emergencies);
+        newEscalations.forEach(emergency => state.escalationNotifications.set(emergency.caseId, emergency));
+        removeInactiveNotifications(state.emergencies);
+        renderEscalationNotifications();
         render();
+        newEscalations.forEach(playEscalationNotification);
         updateAlertSound();
+        state.hasLoaded = true;
         setStatus(`Last refreshed ${new Date().toLocaleTimeString()}`);
       } catch (error) {
         setStatus(error.message || 'Unable to load active emergencies.', true);
@@ -221,14 +312,16 @@
       button.disabled = true;
       button.textContent = 'Acknowledging...';
       try {
-        const response = await fetch(`/api/emergency/${encodeURIComponent(emergency.caseId)}/acknowledge`, {
+        const endpoint = emergency.kind === 'CASE' ? '/api/cases/' : '/api/emergency/';
+        const response = await fetch(`${endpoint}${encodeURIComponent(emergency.caseId)}/acknowledge`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ acknowledgedBy: workerId })
         });
         if (!response.ok) throw new Error(await readError(response));
         emergency.status = 'ACKNOWLEDGED';
-        stopAlertSound();
+        state.escalationNotifications.delete(emergency.caseId);
+        renderEscalationNotifications();
         render();
         updateAlertSound();
         await loadEmergencies();
@@ -258,6 +351,15 @@
       }
       if (facility?.name) params.set('healthCenterName', facility.name);
       if (facility?.healthCenterId) params.set('healthCenterId', facility.healthCenterId);
+      const target = emergency.escalationTargetHealthCenter;
+      const targetLatitude = Number(target?.location?.latitude);
+      const targetLongitude = Number(target?.location?.longitude);
+      if (Number.isFinite(targetLatitude) && Number.isFinite(targetLongitude)) {
+        params.set('escalationTargetLatitude', targetLatitude);
+        params.set('escalationTargetLongitude', targetLongitude);
+      }
+      if (target?.name) params.set('escalationTargetName', target.name);
+      if (target?.healthCenterId) params.set('escalationTargetId', target.healthCenterId);
       window.open(`health-center-map.html?${params.toString()}`, '_blank', 'noopener');
     }
 
@@ -282,6 +384,11 @@
       const startTime = state.soundContext.currentTime;
       playTone(880, startTime, .22);
       playTone(660, startTime + .34, .22);
+    }
+
+    function playEscalationNotification() {
+      if (!state.soundEnabled || !state.soundContext || state.soundContext.state !== 'running') return;
+      playTone(1040, state.soundContext.currentTime, .18);
     }
 
     function startAlertSound() {
@@ -331,7 +438,11 @@
     $('#refresh-button').addEventListener('click', loadEmergencies);
     window.addEventListener('beforeunload', stopAlertSound);
     loadEmergencies();
-    window.setInterval(loadEmergencies, POLL_INTERVAL_MS);
+    state.pollTimer = window.setInterval(loadEmergencies, NOTIFICATION_POLL_INTERVAL_MS);
+    window.addEventListener('beforeunload', () => {
+      if (state.pollTimer) window.clearInterval(state.pollTimer);
+      state.pollTimer = null;
+    });
   </script>
 </body>
 </html>

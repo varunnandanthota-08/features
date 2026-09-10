@@ -2,13 +2,14 @@ const request = require('supertest');
 
 const mockGetActiveEmergencies = jest.fn();
 const mockAcknowledgeEmergency = jest.fn();
+const mockEscalateEmergency = jest.fn();
 const mockGetEmergencyCase = jest.fn();
 
 jest.mock('../src/services/emergency.service', () => ({
   createEmergencyCase: jest.fn(),
   getActiveEmergencies: mockGetActiveEmergencies,
   acknowledgeEmergency: mockAcknowledgeEmergency,
-  escalateEmergency: jest.fn(),
+  escalateEmergency: mockEscalateEmergency,
   resolveEmergency: jest.fn(),
   getEmergencyCase: mockGetEmergencyCase
 }));
@@ -19,6 +20,7 @@ describe('emergency dashboard API', () => {
   beforeEach(() => {
     mockGetActiveEmergencies.mockReset();
     mockAcknowledgeEmergency.mockReset();
+    mockEscalateEmergency.mockReset();
     mockGetEmergencyCase.mockReset();
   });
 
@@ -32,9 +34,14 @@ describe('emergency dashboard API', () => {
       status: 'ALERTED',
       location: { latitude: 17.4, longitude: 78.4 },
       selectedHealthCenter: { name: 'Emergency Centre' },
+      escalatedFromHealthCenter: { healthCenterId: 'HC-001', name: 'Original Centre' },
+      escalationTargetHealthCenter: { healthCenterId: 'HC-002', name: 'Backup Centre' },
+      escalationStatus: 'ESCALATED',
+      escalationLevel: 1,
+      escalatedAt: '2026-09-10T10:02:01.000Z',
+      escalatedToHealthCenterId: 'facility-backup',
       createdAt: '2026-09-10T10:00:00.000Z',
-      acknowledgedAt: null,
-      escalationLevel: 0
+      acknowledgedAt: null
     }]);
 
     const response = await request(app).get('/api/emergency/active');
@@ -49,6 +56,14 @@ describe('emergency dashboard API', () => {
         location: { latitude: 17.4, longitude: 78.4 },
         selectedHealthCenter: { name: 'Emergency Centre' }
       }]
+    });
+
+    expect(response.body.data[0]).toMatchObject({
+      escalatedFromHealthCenter: { healthCenterId: 'HC-001' },
+      escalationTargetHealthCenter: { healthCenterId: 'HC-002' },
+      escalationStatus: 'ESCALATED',
+      escalationLevel: 1,
+      escalatedToHealthCenterId: 'facility-backup'
     });
   });
 
@@ -70,6 +85,28 @@ describe('emergency dashboard API', () => {
     expect(response.body.data.emergency).toMatchObject({
       status: 'ACKNOWLEDGED',
       acknowledgedBy: 'worker-1'
+    });
+  });
+
+  test('returns escalation state through the existing emergency endpoint', async () => {
+    mockEscalateEmergency.mockResolvedValueOnce({
+      caseId: 'EMG-1',
+      status: 'ALERTED',
+      escalationStatus: 'ESCALATED',
+      escalationLevel: 1,
+      escalationReason: 'No acknowledgement within SLA',
+      escalatedAt: '2026-09-10T10:02:01.000Z'
+    });
+
+    const response = await request(app).post('/api/emergency/EMG-1/escalate');
+
+    expect(response.status).toBe(200);
+    expect(mockEscalateEmergency).toHaveBeenCalledWith('EMG-1');
+    expect(response.body.data.escalation).toMatchObject({
+      status: 'ESCALATED',
+      level: 1,
+      reason: 'No acknowledgement within SLA',
+      targetSelectionRequired: true
     });
   });
 

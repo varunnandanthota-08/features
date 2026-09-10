@@ -16,6 +16,24 @@ function emergencyResponse(emergency, patient, selectedFacility) {
       emergency,
       patient,
       selectedFacility,
+      escalation: {
+        status: emergency.escalationStatus || 'NOT_ESCALATED',
+        level: emergency.escalationLevel || 0,
+        reason: emergency.escalationReason || null,
+        escalatedAt: emergency.escalatedAt || null,
+        escalatedTo: emergency.escalationTargetHealthCenter
+          || emergency.escalatedToHealthCenterId
+          || emergency.escalatedToHealthWorkerId
+          || null,
+        targetSelectionRequired: emergency.escalationStatus === 'ESCALATED'
+          && !emergency.escalatedToHealthCenterId
+          && !emergency.escalatedToHealthWorkerId,
+        targetMessage: emergency.escalationStatus === 'ESCALATED'
+          && !emergency.escalatedToHealthCenterId
+          && !emergency.escalatedToHealthWorkerId
+          ? 'Escalation required - target selection pending'
+          : null
+      },
       requiresImmediateAttention: emergency.priority === 'CRITICAL'
     }
   };

@@ -29,7 +29,12 @@ jest.mock('../src/models/EmergencyCase', () => ({
   findOne: mockEmergencyFindOne
 }));
 
-const { createEmergencyCase, getActiveEmergencies, acknowledgeEmergency } = require('../src/services/emergency.service');
+const {
+  createEmergencyCase,
+  findEscalationTarget,
+  getActiveEmergencies,
+  acknowledgeEmergency
+} = require('../src/services/emergency.service');
 
 describe('emergency service', () => {
   beforeEach(() => {
@@ -135,6 +140,19 @@ describe('emergency service', () => {
       assignmentStatus: 'ASSIGNED',
       referredFacilityId: 'facility-emergency'
     }));
+  });
+
+  test('selects the nearest suitable alternative and excludes the current centre', async () => {
+    const result = await findEscalationTarget({
+      assignedHealthCenterId: 'facility-near',
+      location: { latitude: 17.4, longitude: 78.4 }
+    });
+
+    expect(result.healthCenter).toMatchObject({
+      _id: 'facility-emergency',
+      healthCenterId: 'HC-EMERGENCY'
+    });
+    expect(result.healthCenter._id).not.toBe('facility-near');
   });
 
   test('does not assign a centre when patient coordinates are unavailable', async () => {

@@ -241,7 +241,8 @@
     const patientLocation = coordinatePair('patientLatitude', 'patientLongitude')
       || coordinatePair('latitude', 'longitude');
     const healthCenterLocation = coordinatePair('healthCenterLatitude', 'healthCenterLongitude');
-    const mapLocation = patientLocation || healthCenterLocation;
+    const escalationTargetLocation = coordinatePair('escalationTargetLatitude', 'escalationTargetLongitude');
+    const mapLocation = patientLocation || healthCenterLocation || escalationTargetLocation;
     const map = mapLocation ? L.map('map').setView([mapLocation.latitude, mapLocation.longitude], 11) : null;
     const markerLayer = map ? L.layerGroup().addTo(map) : null;
     const statusElement = document.getElementById('status');
@@ -287,8 +288,13 @@
           emergencyMarkers.push(L.marker([healthCenterLocation.latitude, healthCenterLocation.longitude])
             .addTo(markerLayer).bindPopup(`<strong>Assigned Health Centre</strong><br>${healthCenterName}`));
         }
+        if (escalationTargetLocation) {
+          const targetName = escapeHtml(mapQuery.get('escalationTargetName') || 'Escalation Target');
+          emergencyMarkers.push(L.marker([escalationTargetLocation.latitude, escalationTargetLocation.longitude])
+            .addTo(markerLayer).bindPopup(`<strong>Escalation Target</strong><br>${targetName}`));
+        }
         if (emergencyMarkers.length > 1) map.fitBounds(L.featureGroup(emergencyMarkers).getBounds().pad(.2));
-        statusElement.textContent = `${patientLocation ? 'Patient location shown.' : 'Patient location unavailable.'} ${healthCenterLocation ? 'Assigned Health Centre location shown.' : 'No Health Centre assigned yet.'}`;
+        statusElement.textContent = `${patientLocation ? 'Patient location shown.' : 'Patient location unavailable.'} ${healthCenterLocation ? 'Original Assigned Health Centre shown.' : 'No Health Centre assigned yet.'} ${escalationTargetLocation ? 'Escalation Target shown.' : ''}`;
       } else {
         L.marker([mapLocation.latitude, mapLocation.longitude]).addTo(markerLayer).bindPopup('<strong>Selected location</strong>');
       }
