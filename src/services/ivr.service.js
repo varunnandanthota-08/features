@@ -3,6 +3,8 @@ const Conversation = require('../models/Conversation');
 const { CONVERSATION_STATES } = require('../constants/conversationStates');
 const { normalizeWhatsAppNumber } = require('../config/twilio');
 const { createOrUpdatePatient } = require('./patient.service');
+const { createEmergencyCase, getPatientLocation } = require('./emergency.service');
+const { geocodeLocation } = require('./geocoding.service');
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 const channel = 'IVR';
@@ -16,7 +18,7 @@ const voiceConfig = {
 
 const prompts = {
   en: {
-    language: 'Welcome to Rural Health Support.\nPress 1 for Telugu. Press 2 for Hindi. Press 3 for English.',
+    language: 'Welcome to Rural Health Support.\nPress 1 for Telugu. Press 2 for Hindi. Press 3 for English. Press 4 to call a nearby health worker. Press 5 for emergency assistance.',
     name: 'Please say your full name after the tone.',
     age: 'Please enter your age using the keypad, followed by the pound key.',
     gender: 'Press 1 for Male. Press 2 for Female. Press 3 for Other.',
@@ -24,6 +26,9 @@ const prompts = {
     symptoms: 'Please describe the health problem you are experiencing after the tone.',
     confirm: data => `You said your name is ${data.name}, age ${data.age}, gender ${data.gender}, village ${data.village}, and health problem ${data.symptomsDescription}. Press 1 to confirm or press 2 to start again.`,
     complete: 'Your registration is complete. Thank you. Goodbye.',
+    emergency: 'Your emergency request has been registered. A nearby health worker has been alerted. Goodbye.',
+    emergencyPending: 'Your emergency request has been recorded. We could not automatically resolve your location. A health worker will review the alert. Goodbye.',
+    emergencyLocationConfirm: displayName => `I understood your location as ${displayName}. Press 1 to confirm or press 2 to say your location again.`,
     invalid: 'That input was not valid. Please try again.',
     failed: 'We could not complete your registration right now. Please try again later. Goodbye.'
   },
@@ -85,9 +90,20 @@ function getPromptForState(state, language = 'en', data = {}) {
     [CONVERSATION_STATES.IVR_COLLECT_GENDER]: prompt.gender,
     [CONVERSATION_STATES.IVR_COLLECT_LOCATION]: prompt.location,
     [CONVERSATION_STATES.IVR_COLLECT_SYMPTOMS]: prompt.symptoms,
+    [CONVERSATION_STATES.IVR_EMERGENCY_LOCATION_CONFIRM]: prompt.emergencyLocationConfirm(data.emergencyLocationLabel || 'the selected location'),
     [CONVERSATION_STATES.IVR_CONFIRM]: prompt.confirm(data),
     [CONVERSATION_STATES.IVR_COMPLETED]: prompt.complete
   }[state] || '';
+}
+
+function parseLocationCoordinates(value) {
+  const match = String(value || '').match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if (!match) return null;
+  const latitude = Number(match[1]);
+  const longitude = Number(match[2]);
+  return Number.isFinite(latitude) && latitude >= -90 && latitude <= 90
+    && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180
+    ? { latitude, longitude } : null;
 }
 
 function say(response, text, language = 'en') {
@@ -123,6 +139,19 @@ function twimlForState(state, language = 'en', data = {}) {
     [CONVERSATION_STATES.IVR_COLLECT_LOCATION]: getIvrCallbackUrl('/api/ivr/location'),
     [CONVERSATION_STATES.IVR_COLLECT_SYMPTOMS]: getIvrCallbackUrl('/api/ivr/symptoms')
   };
+
+  if (state === CONVERSATION_STATES.IVR_EMERGENCY_LOCATION) {
+    gather(response, getIvrCallbackUrl('/api/ivr/emergency-location'), prompt.location, language);
+    return response.toString();
+  }
+
+  if (state === CONVERSATION_STATES.IVR_EMERGENCY_LOCATION_CONFIRM) {
+    gather(response, getIvrCallbackUrl('/api/ivr/emergency-location-confirm'), prompt.emergencyLocationConfirm(data.emergencyLocationLabel || 'the selected location'), language, {
+      input: 'dtmf',
+      numDigits: 1
+    });
+    return response.toString();
+  }
 
   if (state === CONVERSATION_STATES.IVR_COLLECT_GENDER) {
     gather(response, getIvrCallbackUrl('/api/ivr/gender'), prompt.gender, language, { input: 'dtmf', numDigits: 1 });
@@ -206,6 +235,8 @@ async function processTestInput({ phone, callSid, value, eventId }) {
     [CONVERSATION_STATES.IVR_COLLECT_GENDER]: handleGender,
     [CONVERSATION_STATES.IVR_COLLECT_LOCATION]: handleLocation,
     [CONVERSATION_STATES.IVR_COLLECT_SYMPTOMS]: handleSymptoms,
+    [CONVERSATION_STATES.IVR_EMERGENCY_LOCATION]: handleEmergencyLocation,
+    [CONVERSATION_STATES.IVR_EMERGENCY_LOCATION_CONFIRM]: handleEmergencyLocationConfirm,
     [CONVERSATION_STATES.IVR_CONFIRM]: handleConfirm,
     [CONVERSATION_STATES.IVR_COMPLETED]: handleCompleted
   };
@@ -270,11 +301,87 @@ async function processInput(req, route, transition) {
 
 async function handleLanguage(req) {
   return processInput(req, 'language', async (session, input) => {
+    if (input.digits === '5') {
+      const storedLocation = await getPatientLocation({ phone: session.phone });
+      const hasCoordinates = Number.isFinite(storedLocation?.latitude)
+        && Number.isFinite(storedLocation?.longitude);
+      if (!hasCoordinates) {
+        session.state = CONVERSATION_STATES.IVR_EMERGENCY_LOCATION;
+        return { twiml: twimlForState(session.state, 'en', session.data) };
+      }
+      const result = await createEmergencyCase({
+        phone: session.phone,
+        source: 'PHONE_IVR',
+        reason: 'Emergency request via IVR',
+        location: storedLocation,
+        status: 'ALERTED'
+      });
+      session.data.emergencyCaseId = result.emergency.caseId;
+      session.state = CONVERSATION_STATES.IVR_COMPLETED;
+      const response = new VoiceResponse();
+      say(response, prompts.en.emergency, 'en');
+      response.hangup();
+      return { twiml: response.toString() };
+    }
     const language = { '1': 'te', '2': 'hi', '3': 'en' }[input.digits];
     if (!language) return { twiml: twimlForLanguage() };
     session.language = language;
     session.state = CONVERSATION_STATES.IVR_COLLECT_NAME;
     return { twiml: twimlForState(session.state, language, session.data) };
+  });
+}
+
+async function handleEmergencyLocation(req) {
+  return processInput(req, 'emergency-location', async (session, input) => {
+    const value = input.speech || input.digits;
+    if (!value || value.length > 200) {
+      return { twiml: twimlForState(CONVERSATION_STATES.IVR_EMERGENCY_LOCATION, 'en', session.data) };
+    }
+    const location = parseLocationCoordinates(value);
+    const resolvedLocation = location || await geocodeLocation(value);
+    if (!resolvedLocation) {
+      const response = new VoiceResponse();
+      say(response, 'I could not resolve that location. Please say your village or location again.', 'en');
+      response.redirect({ method: 'POST' }, getIvrCallbackUrl('/api/ivr/emergency-location'));
+      return { twiml: response.toString() };
+    }
+    session.data.emergencyLatitude = resolvedLocation.latitude;
+    session.data.emergencyLongitude = resolvedLocation.longitude;
+    session.data.emergencyLocationLabel = resolvedLocation.displayName || value;
+    session.state = CONVERSATION_STATES.IVR_EMERGENCY_LOCATION_CONFIRM;
+    return { twiml: twimlForState(session.state, 'en', session.data) };
+  });
+}
+
+async function handleEmergencyLocationConfirm(req) {
+  return processInput(req, 'emergency-location-confirm', async (session, input) => {
+    if (input.digits === '2') {
+      session.data.emergencyLatitude = null;
+      session.data.emergencyLongitude = null;
+      session.data.emergencyLocationLabel = null;
+      session.state = CONVERSATION_STATES.IVR_EMERGENCY_LOCATION;
+      return { twiml: twimlForState(session.state, 'en', session.data) };
+    }
+    if (input.digits !== '1') {
+      return { twiml: twimlForState(CONVERSATION_STATES.IVR_EMERGENCY_LOCATION_CONFIRM, 'en', session.data) };
+    }
+    const result = await createEmergencyCase({
+      phone: session.phone,
+      source: 'PHONE_IVR',
+      reason: 'Emergency request via IVR',
+      location: {
+        latitude: session.data.emergencyLatitude,
+        longitude: session.data.emergencyLongitude
+      },
+      locationLabel: session.data.emergencyLocationLabel,
+      status: 'ALERTED'
+    });
+    session.data.emergencyCaseId = result.emergency.caseId;
+    session.state = CONVERSATION_STATES.IVR_COMPLETED;
+    const response = new VoiceResponse();
+    say(response, prompts.en.emergency, 'en');
+    response.hangup();
+    return { twiml: response.toString() };
   });
 }
 
@@ -408,6 +515,9 @@ module.exports = {
   handleGender,
   handleLocation,
   handleSymptoms,
+  handleEmergencyLocation,
+  handleEmergencyLocationConfirm,
+  parseLocationCoordinates,
   handleConfirm,
   handleCompleted,
   twimlForLanguage,

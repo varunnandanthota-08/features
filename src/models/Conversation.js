@@ -33,7 +33,10 @@ const conversationSchema = new mongoose.Schema({
     age: { type: Number, default: null },
     gender: { type: String, default: null },
     village: { type: String, default: null },
-    symptomsDescription: { type: String, default: null }
+    symptomsDescription: { type: String, default: null },
+    emergencyLatitude: { type: Number, default: null },
+    emergencyLongitude: { type: Number, default: null },
+    emergencyLocationLabel: { type: String, default: null }
   },
   processedMessageIds: {
     type: [String],

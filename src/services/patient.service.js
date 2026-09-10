@@ -38,12 +38,24 @@ function validatePatientData(patientData) {
 function toPatientDocument(patientData) {
   validatePatientData(patientData);
 
+  const location = { village: patientData.village.trim() };
+  if (patientData.latitude !== undefined || patientData.longitude !== undefined) {
+    if (typeof patientData.latitude !== 'number' || !Number.isFinite(patientData.latitude)
+      || patientData.latitude < -90 || patientData.latitude > 90
+      || typeof patientData.longitude !== 'number' || !Number.isFinite(patientData.longitude)
+      || patientData.longitude < -180 || patientData.longitude > 180) {
+      throw new Error('Patient coordinates must be valid latitude and longitude values');
+    }
+    location.latitude = patientData.latitude;
+    location.longitude = patientData.longitude;
+  }
+
   return {
     phone: normalizePhone(patientData.phone),
     name: patientData.name.trim(),
     age: patientData.age,
     gender: patientData.gender,
-    location: { village: patientData.village.trim() },
+    location,
     language: patientData.language,
     symptomsDescription: patientData.symptomsDescription.trim(),
     source: patientData.source || 'WHATSAPP'

@@ -35,6 +35,8 @@ function createIvrController(service = ivrService) {
     gender: handler('handleGender'),
     location: handler('handleLocation'),
     symptoms: handler('handleSymptoms'),
+    emergencyLocation: handler('handleEmergencyLocation'),
+    emergencyLocationConfirm: handler('handleEmergencyLocationConfirm'),
     confirm: handler('handleConfirm')
   };
 }

@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Emergency Alerts | Rural Health</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #18312f;
+      --muted: #637572;
+      --paper: #f6f8f3;
+      --panel: #fff;
+      --line: #dce5df;
+      --accent: #176b5b;
+      --accent-dark: #0f5145;
+      --accent-soft: #dcefe8;
+      --danger: #9c3d38;
+      --danger-dark: #7c2d2a;
+      --danger-soft: #f8dfdc;
+      --warning: #9a6500;
+      --warning-soft: #fff4d6;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      background: radial-gradient(circle at 8% 0%, #f6e8e1 0, transparent 32rem), var(--paper);
+      color: var(--ink);
+      font-family: Georgia, 'Times New Roman', serif;
+      margin: 0;
+      min-height: 100vh;
+    }
+    main { margin: 0 auto; max-width: 78rem; padding: 2.5rem 1.25rem 4rem; }
+    header { margin-bottom: 1.25rem; }
+    .eyebrow { color: var(--danger); font-family: 'Trebuchet MS', sans-serif; font-size: .72rem; font-weight: bold; letter-spacing: .13em; margin: 0 0 .55rem; text-transform: uppercase; }
+    h1 { font-size: clamp(2.2rem, 6vw, 4rem); letter-spacing: 0; line-height: .98; margin: 0; max-width: 38rem; }
+    .lede { color: var(--muted); font-family: 'Trebuchet MS', sans-serif; line-height: 1.5; margin: .8rem 0 0; max-width: 44rem; }
+    .toolbar { align-items: end; background: var(--panel); border: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: .8rem; justify-content: space-between; margin-bottom: 1rem; padding: 1rem; }
+    label { color: var(--muted); display: grid; font-family: 'Trebuchet MS', sans-serif; font-size: .73rem; font-weight: bold; gap: .35rem; text-transform: uppercase; }
+    input, button { border: 1px solid var(--line); border-radius: .35rem; font: inherit; min-height: 2.7rem; padding: .55rem .75rem; }
+    input { background: var(--panel); color: var(--ink); min-width: 14rem; }
+    button { background: var(--accent); border-color: var(--accent); color: white; cursor: pointer; font-family: 'Trebuchet MS', sans-serif; font-weight: bold; }
+    button:hover { background: var(--accent-dark); }
+    button:disabled { cursor: wait; opacity: .55; }
+    button.secondary { background: transparent; border-color: var(--line); color: var(--ink); }
+    button.sound-enabled { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+    .toolbar-actions { display: flex; flex-wrap: wrap; gap: .6rem; }
+    .status { color: var(--muted); font-family: 'Trebuchet MS', sans-serif; min-height: 1.5rem; padding: .4rem 0 1rem; }
+    .status.error { color: var(--danger); }
+    .empty { background: var(--panel); border: 1px dashed var(--line); color: var(--muted); font-family: 'Trebuchet MS', sans-serif; padding: 2rem; text-align: center; }
+    .alert-list { display: grid; gap: 1rem; }
+    .alert-card { background: var(--panel); border: 1px solid var(--line); box-shadow: 0 1.5rem 3rem rgba(24, 49, 47, .08); padding: 1rem; }
+    .alert-card.alerted { border: 2px solid var(--danger); box-shadow: 0 .8rem 2rem rgba(156, 61, 56, .16); }
+    .alert-header { align-items: start; display: flex; gap: 1rem; justify-content: space-between; }
+    .alert-title { align-items: center; display: flex; gap: .55rem; }
+    .alert-title h2 { font-size: 1.45rem; margin: 0; }
+    .alert-icon { color: var(--danger); font-family: 'Trebuchet MS', sans-serif; font-size: 1.2rem; }
+    .badge { background: var(--warning-soft); color: var(--warning); display: inline-block; font-family: 'Trebuchet MS', sans-serif; font-size: .72rem; font-weight: bold; padding: .35rem .55rem; text-transform: uppercase; }
+    .badge.alerted { background: var(--danger-soft); color: var(--danger); }
+    .badge.acknowledged { background: var(--accent-soft); color: var(--accent); }
+    .alert-grid { display: grid; gap: .7rem 1.2rem; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: .9rem; }
+    .detail { border-top: 1px solid var(--line); padding-top: .55rem; }
+    .detail strong { color: var(--muted); display: block; font-family: 'Trebuchet MS', sans-serif; font-size: .7rem; letter-spacing: .08em; margin-bottom: .2rem; text-transform: uppercase; }
+    .detail p { margin: 0; line-height: 1.4; }
+    .alert-actions { border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: .6rem; justify-content: end; margin-top: 1rem; padding-top: 1rem; }
+    .alert-actions .acknowledge { background: var(--danger); border-color: var(--danger); }
+    .alert-actions .acknowledge:hover { background: var(--danger-dark); }
+    .alert-actions .acknowledge:disabled { background: var(--danger); }
+    .alert-error { color: var(--danger); font-family: 'Trebuchet MS', sans-serif; font-size: .82rem; margin: .7rem 0 0; }
+    @media (max-width: 650px) {
+      main { padding: 1.5rem .75rem 2.5rem; }
+      .toolbar { align-items: stretch; }
+      input { min-width: 0; width: 100%; }
+      .toolbar label, .toolbar-actions { width: 100%; }
+      .toolbar-actions button { flex: 1; }
+      .alert-header { align-items: start; flex-direction: column; gap: .65rem; }
+      .alert-grid { grid-template-columns: 1fr; }
+      .alert-actions { justify-content: stretch; }
+      .alert-actions button { flex: 1; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">Rural Health / Emergency Response</p>
+      <h1>Emergency alerts</h1>
+      <p class="lede">Monitor urgent cases from the response network and acknowledge them as soon as a worker takes responsibility.</p>
+    </header>
+
+    <section class="toolbar" aria-label="Emergency alert controls">
+      <label for="worker-id">Health worker identifier
+        <input id="worker-id" autocomplete="off" placeholder="Enter your name or ID">
+      </label>
+      <div class="toolbar-actions">
+        <button type="button" id="sound-button" class="secondary">Enable Alert Sound</button>
+        <button type="button" id="refresh-button" class="secondary">Refresh</button>
+      </div>
+    </section>
+
+    <div id="status" class="status" role="status" aria-live="polite">Loading active emergencies...</div>
+    <section id="alert-list" class="alert-list" aria-label="Active emergencies"></section>
+  </main>
+
+  <script>
+    const POLL_INTERVAL_MS = 5000;
+    const state = { emergencies: [], soundEnabled: false, soundContext: null, soundTimer: null, soundNodes: new Set() };
+    const $ = selector => document.querySelector(selector);
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>'"]/g, character => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+      }[character]));
+    }
+
+    function formatDate(value) {
+      if (!value) return 'Not available';
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? 'Not available' : date.toLocaleString();
+    }
+
+    function locationText(emergency) {
+      const location = emergency.patientLocation || emergency.location || {};
+      const latitude = location.latitude;
+      const longitude = location.longitude;
+      if (emergency.locationStatus === 'UNRESOLVED') return 'Location unavailable';
+      return Number.isFinite(Number(latitude)) && Number.isFinite(Number(longitude))
+        ? `${location.village || 'Resolved location'} (${latitude}, ${longitude})`
+        : location.village || 'Patient location unavailable';
+    }
+
+    function isAlerted(emergency) {
+      return emergency.status === 'ALERTED';
+    }
+
+    function sortedEmergencies(emergencies) {
+      return [...emergencies].sort((first, second) => Number(isAlerted(second)) - Number(isAlerted(first)));
+    }
+
+    function render() {
+      const list = $('#alert-list');
+      list.replaceChildren();
+      const emergencies = sortedEmergencies(state.emergencies);
+      if (!emergencies.length) {
+        list.innerHTML = '<div class="empty">No active emergencies</div>';
+        return;
+      }
+
+      emergencies.forEach(emergency => {
+        const card = document.createElement('article');
+        const alerted = isAlerted(emergency);
+        card.className = `alert-card${alerted ? ' alerted' : ''}`;
+        card.dataset.caseId = emergency.caseId;
+        const patientName = emergency.patient?.name || 'Patient information unavailable';
+        const facility = emergency.assignedHealthCenter || emergency.selectedHealthCenter;
+        const assigned = emergency.assignmentStatus === 'ASSIGNED' || (!emergency.assignmentStatus && facility);
+        const facilityName = assigned && facility
+          ? `${facility.healthCenterId || 'Health centre'} - ${facility.name || 'Unnamed health centre'}`
+          : 'ASSIGNMENT PENDING';
+        card.innerHTML = `
+          <div class="alert-header">
+            <div class="alert-title"><span class="alert-icon" aria-hidden="true">&#9888;</span><h2>${alerted ? 'CRITICAL EMERGENCY' : 'Emergency case'}</h2></div>
+            <span class="badge ${alerted ? 'alerted' : 'acknowledged'}">${escapeHtml(emergency.status)}</span>
+          </div>
+          <div class="alert-grid">
+            <div class="detail"><strong>Patient</strong><p>${escapeHtml(patientName)}</p></div>
+            <div class="detail"><strong>Source</strong><p>${escapeHtml(emergency.source)}</p></div>
+            <div class="detail"><strong>Reason</strong><p>${escapeHtml(emergency.reason)}</p></div>
+            <div class="detail"><strong>Patient location</strong><p>${escapeHtml(locationText(emergency))}</p></div>
+            <div class="detail"><strong>Assigned health centre</strong><p>${escapeHtml(facilityName)}</p></div>
+            <div class="detail"><strong>Assignment status</strong><p>${escapeHtml(emergency.assignmentStatus || (facility ? 'ASSIGNED' : 'ASSIGNMENT PENDING'))}</p></div>
+            <div class="detail"><strong>Created</strong><p>${escapeHtml(formatDate(emergency.createdAt))}</p></div>
+            <div class="detail"><strong>Alert status</strong><p>${escapeHtml(emergency.status)}</p></div>
+          </div>
+          <div class="alert-actions">
+            <button type="button" class="secondary map-button">View Map</button>
+            <button type="button" class="acknowledge" ${alerted ? '' : 'disabled'}>${alerted ? 'Acknowledge' : 'Acknowledged'}</button>
+          </div>
+          <p class="alert-error" role="alert"></p>`;
+        card.querySelector('.map-button').addEventListener('click', () => openMap(emergency));
+        card.querySelector('.acknowledge').addEventListener('click', () => acknowledge(emergency, card));
+        list.appendChild(card);
+      });
+    }
+
+    function setStatus(message, isError = false) {
+      $('#status').textContent = message;
+      $('#status').classList.toggle('error', isError);
+    }
+
+    async function readError(response) {
+      try {
+        const result = await response.json();
+        return result.message || 'The request could not be completed.';
+      } catch (_) {
+        return 'The request could not be completed.';
+      }
+    }
+
+    async function loadEmergencies() {
+      try {
+        const response = await fetch('/api/emergency/active');
+        if (!response.ok) throw new Error(await readError(response));
+        const result = await response.json();
+        state.emergencies = Array.isArray(result.data) ? result.data : [];
+        render();
+        updateAlertSound();
+        setStatus(`Last refreshed ${new Date().toLocaleTimeString()}`);
+      } catch (error) {
+        setStatus(error.message || 'Unable to load active emergencies.', true);
+      }
+    }
+
+    async function acknowledge(emergency, card) {
+      const workerId = $('#worker-id').value.trim();
+      if (!workerId) {
+        card.querySelector('.alert-error').textContent = 'Enter a health worker identifier first.';
+        return;
+      }
+      const button = card.querySelector('.acknowledge');
+      button.disabled = true;
+      button.textContent = 'Acknowledging...';
+      try {
+        const response = await fetch(`/api/emergency/${encodeURIComponent(emergency.caseId)}/acknowledge`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ acknowledgedBy: workerId })
+        });
+        if (!response.ok) throw new Error(await readError(response));
+        emergency.status = 'ACKNOWLEDGED';
+        stopAlertSound();
+        render();
+        updateAlertSound();
+        await loadEmergencies();
+      } catch (error) {
+        card.querySelector('.alert-error').textContent = error.message || 'Unable to acknowledge emergency.';
+        button.disabled = false;
+        button.textContent = 'Acknowledge';
+      }
+    }
+
+    function openMap(emergency) {
+      const params = new URLSearchParams({ caseId: emergency.caseId });
+      const patientLocation = emergency.patientLocation || emergency.location || {};
+      const patientLatitude = Number(patientLocation.latitude);
+      const patientLongitude = Number(patientLocation.longitude);
+      if (patientLocation.latitude !== undefined && patientLocation.longitude !== undefined
+        && Number.isFinite(patientLatitude) && Number.isFinite(patientLongitude)) {
+        params.set('patientLatitude', patientLatitude);
+        params.set('patientLongitude', patientLongitude);
+      }
+      const facility = emergency.assignedHealthCenter || emergency.selectedHealthCenter;
+      const facilityLatitude = Number(facility?.location?.latitude);
+      const facilityLongitude = Number(facility?.location?.longitude);
+      if (Number.isFinite(facilityLatitude) && Number.isFinite(facilityLongitude)) {
+        params.set('healthCenterLatitude', facilityLatitude);
+        params.set('healthCenterLongitude', facilityLongitude);
+      }
+      if (facility?.name) params.set('healthCenterName', facility.name);
+      if (facility?.healthCenterId) params.set('healthCenterId', facility.healthCenterId);
+      window.open(`health-center-map.html?${params.toString()}`, '_blank', 'noopener');
+    }
+
+    function playTone(frequency, startTime, duration) {
+      if (!state.soundContext || state.soundContext.state !== 'running') return;
+      const oscillator = state.soundContext.createOscillator();
+      const gain = state.soundContext.createGain();
+      oscillator.frequency.value = frequency;
+      oscillator.type = 'triangle';
+      gain.gain.setValueAtTime(.0001, startTime);
+      gain.gain.exponentialRampToValueAtTime(.22, startTime + .025);
+      gain.gain.exponentialRampToValueAtTime(.0001, startTime + duration);
+      oscillator.connect(gain).connect(state.soundContext.destination);
+      state.soundNodes.add(oscillator);
+      oscillator.addEventListener('ended', () => state.soundNodes.delete(oscillator), { once: true });
+      oscillator.start();
+      oscillator.stop(startTime + duration);
+    }
+
+    function playAlertPattern() {
+      if (!state.soundContext || state.soundContext.state !== 'running') return;
+      const startTime = state.soundContext.currentTime;
+      playTone(880, startTime, .22);
+      playTone(660, startTime + .34, .22);
+    }
+
+    function startAlertSound() {
+      if (!state.soundEnabled || state.soundTimer || !state.emergencies.some(isAlerted)) return;
+      playAlertPattern();
+      state.soundTimer = window.setInterval(playAlertPattern, 2200);
+    }
+
+    function stopAlertSound() {
+      if (state.soundTimer) window.clearInterval(state.soundTimer);
+      state.soundTimer = null;
+      state.soundNodes.forEach(node => {
+        try { node.stop(); } catch (_) {}
+        node.disconnect();
+      });
+      state.soundNodes.clear();
+    }
+
+    function updateAlertSound() {
+      if (state.emergencies.some(isAlerted)) startAlertSound();
+      else stopAlertSound();
+    }
+
+    async function enableAlertSound() {
+      try {
+        state.soundContext = state.soundContext || new (window.AudioContext || window.webkitAudioContext)();
+        await state.soundContext.resume();
+        state.soundEnabled = true;
+        $('#sound-button').textContent = 'Mute Alert Sound';
+        $('#sound-button').classList.add('sound-enabled');
+        startAlertSound();
+      } catch (_) {
+        setStatus('Alert sound could not be enabled in this browser.', true);
+      }
+    }
+
+    $('#sound-button').addEventListener('click', () => {
+      if (state.soundEnabled) {
+        state.soundEnabled = false;
+        stopAlertSound();
+        $('#sound-button').textContent = 'Enable Alert Sound';
+        $('#sound-button').classList.remove('sound-enabled');
+      } else {
+        enableAlertSound();
+      }
+    });
+    $('#refresh-button').addEventListener('click', loadEmergencies);
+    window.addEventListener('beforeunload', stopAlertSound);
+    loadEmergencies();
+    window.setInterval(loadEmergencies, POLL_INTERVAL_MS);
+  </script>
+</body>
+</html>

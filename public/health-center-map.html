@@ -226,9 +226,24 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const mapLocation = { latitude: 17.421, longitude: 78.381 };
-    const map = L.map('map').setView([mapLocation.latitude, mapLocation.longitude], 11);
-    const markerLayer = L.layerGroup().addTo(map);
+    const mapQuery = new URLSearchParams(window.location.search);
+    const isEmergencyMap = Boolean(mapQuery.get('caseId'));
+    const coordinatePair = (latitudeKey, longitudeKey) => {
+      const latitudeValue = mapQuery.get(latitudeKey);
+      const longitudeValue = mapQuery.get(longitudeKey);
+      if (latitudeValue === null || longitudeValue === null || latitudeValue === '' || longitudeValue === '') return null;
+      const latitude = Number(latitudeValue);
+      const longitude = Number(longitudeValue);
+      return Number.isFinite(latitude) && latitude >= -90 && latitude <= 90
+        && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180
+        ? { latitude, longitude } : null;
+    };
+    const patientLocation = coordinatePair('patientLatitude', 'patientLongitude')
+      || coordinatePair('latitude', 'longitude');
+    const healthCenterLocation = coordinatePair('healthCenterLatitude', 'healthCenterLongitude');
+    const mapLocation = patientLocation || healthCenterLocation;
+    const map = mapLocation ? L.map('map').setView([mapLocation.latitude, mapLocation.longitude], 11) : null;
+    const markerLayer = map ? L.layerGroup().addTo(map) : null;
     const statusElement = document.getElementById('status');
     const serviceSelect = document.getElementById('service');
     const doctorSelect = document.getElementById('doctor');
@@ -249,11 +264,40 @@
     const referralStatusFilter = document.getElementById('referral-status-filter');
     let referrals = [];
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors',
-      maxZoom: 19
-    }).addTo(map);
-    L.marker([mapLocation.latitude, mapLocation.longitude]).addTo(map).bindPopup('<strong>Selected location</strong>');
+    if (isEmergencyMap) {
+      document.querySelector('h1').textContent = 'Emergency Response Map';
+      document.querySelector('.lede').textContent = 'Patient and assigned Health Centre locations for this emergency alert.';
+      document.getElementById('filter-form').hidden = true;
+      document.querySelector('.referral-section').hidden = true;
+    }
+
+    if (map) {
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19
+      }).addTo(map);
+      if (isEmergencyMap) {
+        const emergencyMarkers = [];
+        if (patientLocation) {
+          emergencyMarkers.push(L.marker([patientLocation.latitude, patientLocation.longitude])
+            .addTo(markerLayer).bindPopup('<strong>Patient</strong>').openPopup());
+        }
+        if (healthCenterLocation) {
+          const healthCenterName = escapeHtml(mapQuery.get('healthCenterName') || 'Assigned Health Centre');
+          emergencyMarkers.push(L.marker([healthCenterLocation.latitude, healthCenterLocation.longitude])
+            .addTo(markerLayer).bindPopup(`<strong>Assigned Health Centre</strong><br>${healthCenterName}`));
+        }
+        if (emergencyMarkers.length > 1) map.fitBounds(L.featureGroup(emergencyMarkers).getBounds().pad(.2));
+        statusElement.textContent = `${patientLocation ? 'Patient location shown.' : 'Patient location unavailable.'} ${healthCenterLocation ? 'Assigned Health Centre location shown.' : 'No Health Centre assigned yet.'}`;
+      } else {
+        L.marker([mapLocation.latitude, mapLocation.longitude]).addTo(markerLayer).bindPopup('<strong>Selected location</strong>');
+      }
+    } else {
+      statusElement.className = 'error';
+      statusElement.textContent = isEmergencyMap
+        ? `${patientLocation ? '' : 'Patient location unavailable. '}${healthCenterLocation ? '' : 'Assigned Health Centre location unavailable.'}`
+        : 'Location unavailable. Select a location before opening the map.';
+    }
 
     function escapeHtml(value) {
       return String(value ?? '').replace(/[&<>'"]/g, character => ({
@@ -499,6 +543,7 @@
       markerLayer.clearLayers();
       clearSelectedFacility();
       try {
+        if (!map) return;
         const response = await fetch(`/api/health-centers/nearby?latitude=${mapLocation.latitude}&longitude=${mapLocation.longitude}&radius=${radius}`);
         if (!response.ok) throw new Error('Nearby request failed');
         const result = await response.json();
@@ -588,7 +633,7 @@
       const button = event.target.closest('[data-referral-status]');
       if (button) updateReferralStatus(button.dataset.referralId, button.dataset.referralStatus, button);
     });
-    loadFacilities();
+    if (!isEmergencyMap && map) loadFacilities();
     loadReferrals();
   </script>
 </body>

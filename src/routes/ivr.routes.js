@@ -14,6 +14,8 @@ router.post('/age', ivrWebhookValidation, controller.age);
 router.post('/gender', ivrWebhookValidation, controller.gender);
 router.post('/location', ivrWebhookValidation, controller.location);
 router.post('/symptoms', ivrWebhookValidation, controller.symptoms);
+router.post('/emergency-location', ivrWebhookValidation, controller.emergencyLocation);
+router.post('/emergency-location-confirm', ivrWebhookValidation, controller.emergencyLocationConfirm);
 router.post('/confirm', ivrWebhookValidation, controller.confirm);
 
 module.exports = router;

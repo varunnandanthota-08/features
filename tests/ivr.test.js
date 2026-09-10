@@ -2,6 +2,9 @@ const request = require('supertest');
 
 const mockConversations = new Map();
 const mockCreateOrUpdatePatient = jest.fn();
+const mockCreateEmergencyCase = jest.fn();
+const mockGetPatientLocation = jest.fn();
+const mockGeocodeLocation = jest.fn();
 
 jest.mock('../src/middleware/twilioWebhookValidation', () => ({
   twilioWebhookValidation: (req, res, next) => next(),
@@ -10,6 +13,15 @@ jest.mock('../src/middleware/twilioWebhookValidation', () => ({
 
 jest.mock('../src/services/patient.service', () => ({
   createOrUpdatePatient: mockCreateOrUpdatePatient
+}));
+
+jest.mock('../src/services/emergency.service', () => ({
+  createEmergencyCase: mockCreateEmergencyCase,
+  getPatientLocation: mockGetPatientLocation
+}));
+
+jest.mock('../src/services/geocoding.service', () => ({
+  geocodeLocation: mockGeocodeLocation
 }));
 
 jest.mock('../src/models/Conversation', () => {
@@ -62,7 +74,16 @@ describe('IVR patient information flow', () => {
   beforeEach(() => {
     mockConversations.clear();
     mockCreateOrUpdatePatient.mockReset();
+    mockCreateEmergencyCase.mockReset();
+    mockGetPatientLocation.mockReset();
+    mockGeocodeLocation.mockReset();
+    mockGetPatientLocation.mockResolvedValue(null);
+    mockGeocodeLocation.mockResolvedValue(null);
     mockCreateOrUpdatePatient.mockResolvedValue({ phone: '+919876543210' });
+    mockCreateEmergencyCase.mockResolvedValue({
+      emergency: { caseId: 'EMG-1' },
+      selectedFacility: { name: 'Rural Emergency Centre' }
+    });
   });
 
   test('answers an incoming call with language selection TwiML', async () => {
@@ -87,6 +108,120 @@ describe('IVR patient information flow', () => {
     expect(mockConversations.get('CA002:IVR')).toMatchObject({
       language: 'en', state: 'IVR_COLLECT_NAME', phone: '+919876543210'
     });
+  });
+
+  test('asks for location when emergency option 5 has no stored coordinates', async () => {
+    await post('incoming', 'CA-EMERGENCY');
+
+    const response = await post('language', 'CA-EMERGENCY', { Digits: '5' });
+
+    expect(response.status).toBe(200);
+    expect(response.text).toContain('Please say your village or location');
+    expect(response.text).toContain('/api/ivr/emergency-location');
+    expect(mockCreateEmergencyCase).not.toHaveBeenCalled();
+    expect(mockConversations.get('CA-EMERGENCY:IVR').state).toBe('IVR_EMERGENCY_LOCATION');
+  });
+
+  test('uses stored patient coordinates when emergency option 5 is pressed', async () => {
+    mockGetPatientLocation.mockResolvedValueOnce({ village: 'Rampur', latitude: 17.4, longitude: 78.4 });
+    await post('incoming', 'CA-EMERGENCY-STORED');
+
+    const response = await post('language', 'CA-EMERGENCY-STORED', { Digits: '5' });
+
+    expect(response.text).toContain('Your emergency request has been registered');
+    expect(mockCreateEmergencyCase).toHaveBeenCalledWith({
+      phone: '+919876543210',
+      source: 'PHONE_IVR',
+      reason: 'Emergency request via IVR',
+      location: { village: 'Rampur', latitude: 17.4, longitude: 78.4 },
+      status: 'ALERTED'
+    });
+    expect(mockCreateOrUpdatePatient).not.toHaveBeenCalled();
+    expect(mockConversations.get('CA-EMERGENCY-STORED:IVR')).toMatchObject({
+      state: 'IVR_COMPLETED',
+      data: { emergencyCaseId: 'EMG-1' }
+    });
+  });
+
+  test('allows retry when collected location cannot be resolved', async () => {
+    await post('incoming', 'CA-EMERGENCY-PENDING');
+    await post('language', 'CA-EMERGENCY-PENDING', { Digits: '5' });
+
+    const response = await post('emergency-location', 'CA-EMERGENCY-PENDING', {
+      SpeechResult: 'Unknown village'
+    });
+
+    expect(response.text).toContain('I could not resolve that location');
+    expect(response.text).toContain('/api/ivr/emergency-location');
+    expect(mockCreateEmergencyCase).not.toHaveBeenCalled();
+    expect(mockConversations.get('CA-EMERGENCY-PENDING:IVR').state).toBe('IVR_EMERGENCY_LOCATION');
+  });
+
+  test('assigns an emergency when speech contains real coordinates', async () => {
+    await post('incoming', 'CA-EMERGENCY-COORDINATES');
+    await post('language', 'CA-EMERGENCY-COORDINATES', { Digits: '5' });
+
+    const locationResponse = await post('emergency-location', 'CA-EMERGENCY-COORDINATES', {
+      SpeechResult: '17.4, 78.4'
+    });
+    expect(locationResponse.text).toContain('Press 1 to confirm');
+    await post('emergency-location-confirm', 'CA-EMERGENCY-COORDINATES', { Digits: '1' });
+
+    expect(mockCreateEmergencyCase).toHaveBeenCalledWith({
+      phone: '+919876543210',
+      source: 'PHONE_IVR',
+      reason: 'Emergency request via IVR',
+      location: { latitude: 17.4, longitude: 78.4 },
+      locationLabel: '17.4, 78.4',
+      status: 'ALERTED'
+    });
+  });
+
+  test('geocodes a spoken Indian place before creating the emergency', async () => {
+    mockGeocodeLocation.mockResolvedValueOnce({
+      latitude: 17.05,
+      longitude: 79.27,
+      displayName: 'Nalgonda, Telangana, India'
+    });
+    await post('incoming', 'CA-EMERGENCY-NALGONDA');
+    await post('language', 'CA-EMERGENCY-NALGONDA', { Digits: '5' });
+
+    const locationResponse = await post('emergency-location', 'CA-EMERGENCY-NALGONDA', {
+      SpeechResult: 'Nalgonda'
+    });
+
+    expect(mockGeocodeLocation).toHaveBeenCalledWith('Nalgonda');
+    expect(locationResponse.text).toContain('I understood your location as Nalgonda, Telangana, India');
+    expect(locationResponse.text).toContain('/api/ivr/emergency-location-confirm');
+    expect(mockCreateEmergencyCase).not.toHaveBeenCalled();
+
+    await post('emergency-location-confirm', 'CA-EMERGENCY-NALGONDA', { Digits: '1' });
+    expect(mockCreateEmergencyCase).toHaveBeenCalledWith({
+      phone: '+919876543210',
+      source: 'PHONE_IVR',
+      reason: 'Emergency request via IVR',
+      location: { latitude: 17.05, longitude: 79.27 },
+      locationLabel: 'Nalgonda, Telangana, India',
+      status: 'ALERTED'
+    });
+  });
+
+  test('returns to emergency location collection when confirmation is rejected', async () => {
+    mockGeocodeLocation.mockResolvedValueOnce({
+      latitude: 17.05,
+      longitude: 79.27,
+      displayName: 'Bachupally, Telangana, India'
+    });
+    await post('incoming', 'CA-EMERGENCY-RETRY');
+    await post('language', 'CA-EMERGENCY-RETRY', { Digits: '5' });
+    await post('emergency-location', 'CA-EMERGENCY-RETRY', { SpeechResult: 'Bachupally' });
+
+    const response = await post('emergency-location-confirm', 'CA-EMERGENCY-RETRY', { Digits: '2' });
+
+    expect(response.text).toContain('Please say your village or location');
+    expect(response.text).toContain('/api/ivr/emergency-location');
+    expect(mockCreateEmergencyCase).not.toHaveBeenCalled();
+    expect(mockConversations.get('CA-EMERGENCY-RETRY:IVR').state).toBe('IVR_EMERGENCY_LOCATION');
   });
 
   test.each([
