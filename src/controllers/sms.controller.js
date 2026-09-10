@@ -10,10 +10,23 @@ function isTwilioPayload(payload) {
     || typeof payload.MessageSid === 'string';
 }
 
+function getInfobipMessage(payload) {
+  const message = Array.isArray(payload.results) ? payload.results[0] : null;
+  if (!message || typeof message !== 'object') return null;
+
+  const from = typeof message.from === 'string' ? message.from.trim() : '';
+  return {
+    from: from && from.startsWith('+') ? from : `+${from}`,
+    body: message.text,
+    messageId: message.messageId
+  };
+}
+
 function normalizeIncomingMessage(payload) {
-  const rawPhone = typeof payload.from === 'string' ? payload.from : payload.From;
-  const rawMessage = typeof payload.body === 'string' ? payload.body : payload.Body;
-  const rawMessageId = typeof payload.messageId === 'string' ? payload.messageId : payload.MessageSid;
+  const infobipMessage = getInfobipMessage(payload);
+  const rawPhone = infobipMessage?.from || (typeof payload.from === 'string' ? payload.from : payload.From);
+  const rawMessage = infobipMessage?.body ?? (typeof payload.body === 'string' ? payload.body : payload.Body);
+  const rawMessageId = infobipMessage?.messageId || (typeof payload.messageId === 'string' ? payload.messageId : payload.MessageSid);
   const phone = typeof rawPhone === 'string' ? rawPhone.trim() : '';
   const message = typeof rawMessage === 'string' ? rawMessage.trim() : '';
   const messageId = typeof rawMessageId === 'string' && rawMessageId.trim()

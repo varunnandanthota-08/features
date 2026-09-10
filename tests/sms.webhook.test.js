@@ -94,6 +94,27 @@ describe('SMS webhook', () => {
     });
   });
 
+  test('accepts an Infobip MO_JSON_2 request and preserves its message id', async () => {
+    const response = await request(app)
+      .post('/api/channels/sms/webhook')
+      .send({
+        results: [{
+          from: '447415774432',
+          to: '447491163443',
+          text: 'HI',
+          messageId: '2491729790183409612'
+        }]
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.reply).toContain('1. Telugu');
+    expect(mockConversations.get('+447415774432:SMS')).toMatchObject({
+      phone: '+447415774432',
+      channel: 'SMS',
+      processedMessageIds: ['2491729790183409612']
+    });
+  });
+
   test('collects language, name, age, gender, location, and symptoms', async () => {
     await send('HI');
     const language = await send('3');
@@ -145,6 +166,24 @@ describe('SMS webhook', () => {
     expect(secondMessage.body.state).toBe('COLLECT_NAME');
     expect(mockConversations.size).toBe(1);
     expect(Array.from(mockConversations.values())[0].language).toBe('hi');
+  });
+
+  test('continues the same SMS conversation across Infobip and local payloads', async () => {
+    const first = await request(app)
+      .post('/api/channels/sms/webhook')
+      .send({ results: [{ from: '447415774432', text: 'HI', messageId: 'INFOBIP-1' }] });
+    const second = await request(app)
+      .post('/api/channels/sms/webhook')
+      .send({ from: '+447415774432', body: '2', messageId: 'LOCAL-2' });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(second.body.state).toBe('COLLECT_NAME');
+    expect(mockConversations.size).toBe(1);
+    expect(mockConversations.get('+447415774432:SMS').processedMessageIds).toEqual([
+      'INFOBIP-1',
+      'LOCAL-2'
+    ]);
   });
 
   test('keeps confirmation open for invalid input', async () => {
