@@ -1,8 +1,24 @@
 const mockConversations = new Map();
 const mockCreateOrUpdatePatient = jest.fn();
+const mockFindByPhone = jest.fn();
+const mockCreateEmergencyCase = jest.fn();
+const mockGetPatientLocation = jest.fn();
+const mockGeocodeLocation = jest.fn();
+const mockEnsureEmergencyPatient = jest.fn();
 
 jest.mock('../../src/services/patient.service', () => ({
-  createOrUpdatePatient: mockCreateOrUpdatePatient
+  createOrUpdatePatient: mockCreateOrUpdatePatient,
+  findByPhone: mockFindByPhone,
+  ensureEmergencyPatient: mockEnsureEmergencyPatient
+}));
+
+jest.mock('../../src/services/emergency.service', () => ({
+  createEmergencyCase: mockCreateEmergencyCase,
+  getPatientLocation: mockGetPatientLocation
+}));
+
+jest.mock('../../src/services/geocoding.service', () => ({
+  geocodeLocation: mockGeocodeLocation
 }));
 
 jest.mock('../../src/models/Conversation', () => {
@@ -62,6 +78,10 @@ function message(text, id) {
   };
 }
 
+function channelMessage(text, id, channel) {
+  return { ...message(text, id), channel };
+}
+
 async function processSequence() {
   await processMessage(message('Hi', 'SM1'));
   await processMessage(message('3', 'SM2'));
@@ -76,6 +96,18 @@ describe('conversation service', () => {
   beforeEach(async () => {
     await Conversation.deleteMany({});
     mockCreateOrUpdatePatient.mockResolvedValue({ phone: '+919876543210' });
+    mockFindByPhone.mockReset();
+    mockGetPatientLocation.mockReset();
+    mockEnsureEmergencyPatient.mockReset();
+    mockCreateEmergencyCase.mockReset();
+    mockGeocodeLocation.mockReset();
+    mockGetPatientLocation.mockResolvedValue(null);
+    mockEnsureEmergencyPatient.mockResolvedValue({ phone: '+919876543210' });
+    mockGeocodeLocation.mockResolvedValue(null);
+    mockCreateEmergencyCase.mockResolvedValue({
+      emergency: { caseId: 'EMG-CHANNEL-1' },
+      selectedFacility: { healthCenterId: 'HC-001', name: 'Community Health Centre J' }
+    });
   });
 
   test('starts a new conversation in SELECT_LANGUAGE', async () => {
@@ -103,6 +135,62 @@ describe('conversation service', () => {
 
     expect(result.conversation.state).toBe(CONVERSATION_STATES.SELECT_LANGUAGE);
     expect(result.conversation.language).toBeNull();
+  });
+
+  test('shows support for shared menu option 4', async () => {
+    await processMessage(message('Hi', 'MENU-1'));
+    const result = await processMessage(message(' 4 ', 'MENU-2'));
+
+    expect(result.response).toContain('local health worker');
+    expect(result.conversation.state).toBe(CONVERSATION_STATES.SELECT_LANGUAGE);
+  });
+
+  test.each(['WHATSAPP', 'SMS'])('uses the shared emergency path for %s', async channel => {
+    const input = text => processMessage(channelMessage(text, `${channel}-${text}-${Date.now()}`, channel));
+    mockGetPatientLocation.mockResolvedValueOnce({ latitude: 17.4, longitude: 78.4 });
+
+    await input('Hi');
+    const result = await input('5');
+
+    expect(result.conversation.state).toBe(CONVERSATION_STATES.COMPLETED);
+    expect(mockCreateEmergencyCase).toHaveBeenCalledWith(expect.objectContaining({
+      phone: '+919876543210',
+      source: channel,
+      status: 'ALERTED',
+      location: { latitude: 17.4, longitude: 78.4 }
+    }));
+  });
+
+  test('geocoded WhatsApp emergency waits for confirmation before assignment', async () => {
+    mockGeocodeLocation.mockResolvedValueOnce({
+      latitude: 17.53,
+      longitude: 78.35,
+      displayName: 'Bachupally, Telangana, India'
+    });
+    await processMessage(message('Hi', 'SOS-1'));
+    const locationPrompt = await processMessage(message('5', 'SOS-2'));
+    expect(locationPrompt.conversation.state).toBe(CONVERSATION_STATES.CHANNEL_EMERGENCY_LOCATION);
+    const confirmation = await processMessage(message('Bachupally', 'SOS-3'));
+    expect(confirmation.conversation.state).toBe(CONVERSATION_STATES.CHANNEL_EMERGENCY_LOCATION_CONFIRM);
+    expect(confirmation.response).toContain('Bachupally, Telangana, India');
+    expect(mockCreateEmergencyCase).not.toHaveBeenCalled();
+
+    await processMessage(message('1', 'SOS-4'));
+    expect(mockCreateEmergencyCase).toHaveBeenCalledWith(expect.objectContaining({
+      source: 'WHATSAPP',
+      location: { latitude: 17.53, longitude: 78.35 },
+      locationLabel: 'Bachupally, Telangana, India'
+    }));
+  });
+
+  test('repeating the same emergency message id does not create another case', async () => {
+    mockGetPatientLocation.mockResolvedValueOnce({ latitude: 17.4, longitude: 78.4 });
+    await processMessage(message('Hi', 'DUP-1'));
+    await processMessage(message('5', 'DUP-2'));
+    const duplicate = await processMessage(message('5', 'DUP-2'));
+
+    expect(duplicate.duplicate).toBe(true);
+    expect(mockCreateEmergencyCase).toHaveBeenCalledTimes(1);
   });
 
   test('stores a trimmed name and advances to age', async () => {

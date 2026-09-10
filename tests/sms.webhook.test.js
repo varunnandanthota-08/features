@@ -2,9 +2,24 @@ const request = require('supertest');
 
 const mockConversations = new Map();
 const mockCreateOrUpdatePatient = jest.fn();
+const mockGetPatientLocation = jest.fn();
+const mockCreateEmergencyCase = jest.fn();
+const mockEnsureEmergencyPatient = jest.fn();
+const mockGeocodeLocation = jest.fn();
 
 jest.mock('../src/services/patient.service', () => ({
-  createOrUpdatePatient: mockCreateOrUpdatePatient
+  createOrUpdatePatient: mockCreateOrUpdatePatient,
+  findByPhone: jest.fn(),
+  ensureEmergencyPatient: mockEnsureEmergencyPatient
+}));
+
+jest.mock('../src/services/emergency.service', () => ({
+  getPatientLocation: mockGetPatientLocation,
+  createEmergencyCase: mockCreateEmergencyCase
+}));
+
+jest.mock('../src/services/geocoding.service', () => ({
+  geocodeLocation: mockGeocodeLocation
 }));
 
 jest.mock('../src/models/Conversation', () => {
@@ -60,7 +75,18 @@ describe('SMS webhook', () => {
   beforeEach(() => {
     mockConversations.clear();
     mockCreateOrUpdatePatient.mockReset();
+    mockGetPatientLocation.mockReset();
+    mockCreateEmergencyCase.mockReset();
+    mockEnsureEmergencyPatient.mockReset();
+    mockGeocodeLocation.mockReset();
     mockCreateOrUpdatePatient.mockResolvedValue({ phone });
+    mockGetPatientLocation.mockResolvedValue({ latitude: 17.4, longitude: 78.4 });
+    mockEnsureEmergencyPatient.mockResolvedValue({ phone });
+    mockGeocodeLocation.mockResolvedValue(null);
+    mockCreateEmergencyCase.mockResolvedValue({
+      emergency: { caseId: 'EMG-SMS-1' },
+      selectedFacility: { healthCenterId: 'HC-001', name: 'Community Health Centre J' }
+    });
     messageNumber = 0;
   });
 
@@ -68,7 +94,7 @@ describe('SMS webhook', () => {
     const response = await send('HI');
 
     expect(response.status).toBe(200);
-    expect(response.body.reply).toContain('1. Telugu');
+    expect(response.body.reply).toContain('1 - Telugu');
     expect(response.body.state).toBe('SELECT_LANGUAGE');
   });
 
@@ -107,7 +133,7 @@ describe('SMS webhook', () => {
       });
 
     expect(response.status).toBe(200);
-    expect(response.body.reply).toContain('1. Telugu');
+    expect(response.body.reply).toContain('1 - Telugu');
     expect(mockConversations.get('+447415774432:SMS')).toMatchObject({
       phone: '+447415774432',
       channel: 'SMS',
@@ -166,6 +192,50 @@ describe('SMS webhook', () => {
     expect(secondMessage.body.state).toBe('COLLECT_NAME');
     expect(mockConversations.size).toBe(1);
     expect(Array.from(mockConversations.values())[0].language).toBe('hi');
+  });
+
+  test('routes SMS option 5 to the existing emergency service with SMS source', async () => {
+    await send('HI');
+    const response = await send(' 5 ', 'SMS-SOS-1');
+
+    expect(response.status).toBe(200);
+    expect(response.body.state).toBe('COMPLETED');
+    expect(response.body.reply).toContain('HC-001 - Community Health Centre J');
+    expect(mockCreateEmergencyCase).toHaveBeenCalledWith(expect.objectContaining({
+      source: 'SMS',
+      location: { latitude: 17.4, longitude: 78.4 },
+      status: 'ALERTED'
+    }));
+
+    const duplicate = await send('5', 'SMS-SOS-1');
+    expect(duplicate.body.duplicate).toBe(true);
+    expect(mockCreateEmergencyCase).toHaveBeenCalledTimes(1);
+  });
+
+  test('creates a minimal patient for a new SMS emergency before location confirmation', async () => {
+    mockGetPatientLocation.mockResolvedValueOnce(null);
+    mockGeocodeLocation.mockResolvedValueOnce({
+      latitude: 17.4,
+      longitude: 78.4,
+      displayName: 'Madhapur, Hyderabad, India'
+    });
+
+    await send('HI');
+    const locationPrompt = await send('5', 'SMS-NEW-SOS');
+    expect(locationPrompt.body.state).toBe('CHANNEL_EMERGENCY_LOCATION');
+    expect(mockEnsureEmergencyPatient).toHaveBeenCalledWith(phone, 'SMS');
+
+    const confirmation = await send('Madhapur', 'SMS-NEW-LOCATION');
+    expect(confirmation.body.state).toBe('CHANNEL_EMERGENCY_LOCATION_CONFIRM');
+    const completed = await send('1', 'SMS-NEW-CONFIRM');
+
+    expect(completed.body.state).toBe('COMPLETED');
+    expect(completed.body.reply).toContain('HC-001 - Community Health Centre J');
+    expect(mockCreateEmergencyCase).toHaveBeenCalledWith(expect.objectContaining({
+      source: 'SMS',
+      location: { latitude: 17.4, longitude: 78.4 },
+      status: 'ALERTED'
+    }));
   });
 
   test('continues the same SMS conversation across Infobip and local payloads', async () => {

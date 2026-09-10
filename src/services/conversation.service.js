@@ -4,7 +4,10 @@ const { CONVERSATION_STATES } = require('../constants/conversationStates');
 const enMessages = require('../messages/en');
 const hiMessages = require('../messages/hi');
 const teMessages = require('../messages/te');
-const { createOrUpdatePatient } = require('./patient.service');
+const { createOrUpdatePatient, ensureEmergencyPatient } = require('./patient.service');
+const { createEmergencyCase, getPatientLocation } = require('./emergency.service');
+const { geocodeLocation } = require('./geocoding.service');
+const { CHANNEL_MENU_OPTIONS, languageForMenuOption, isMenuOption } = require('../constants/channelMenu');
 
 const messagesByLanguage = { en: enMessages, hi: hiMessages, te: teMessages };
 const channel = 'WHATSAPP';
@@ -16,6 +19,51 @@ function normalizePhone(phone) {
 
 function getMessages(language) {
   return messagesByLanguage[language] || enMessages;
+}
+
+function emergencyResponseMessage(language, result) {
+  const facility = result?.selectedFacility;
+  if (facility?.healthCenterId && facility?.name) {
+    return `${getMessages(language).emergencyRegistered} Assigned Health Centre: ${facility.healthCenterId} - ${facility.name}.`;
+  }
+  return getMessages(language).emergencyRegistered;
+}
+
+async function createChannelEmergency(conversation) {
+  return createEmergencyCase({
+    phone: conversation.phone,
+    source: conversation.channel,
+    reason: `Emergency request via ${conversation.channel}`,
+    location: {
+      latitude: conversation.data.emergencyLatitude,
+      longitude: conversation.data.emergencyLongitude
+    },
+    locationLabel: conversation.data.emergencyLocationLabel,
+    status: 'ALERTED'
+  });
+}
+
+async function startChannelEmergency(conversation, messageId) {
+  if (conversation.channel === smsChannel) {
+    await ensureEmergencyPatient(conversation.phone, smsChannel);
+  }
+  const storedLocation = await getPatientLocation({ phone: conversation.phone });
+  const hasCoordinates = Number.isFinite(storedLocation?.latitude)
+    && Number.isFinite(storedLocation?.longitude);
+  if (hasCoordinates) {
+    const result = await createEmergencyCase({
+      phone: conversation.phone,
+      source: conversation.channel,
+      reason: `Emergency request via ${conversation.channel}`,
+      location: storedLocation,
+      status: 'ALERTED'
+    });
+    conversation.state = CONVERSATION_STATES.COMPLETED;
+    conversation.data.emergencyCaseId = result.emergency.caseId;
+    return saveResponse(conversation, messageId, emergencyResponseMessage(conversation.language || 'en', result));
+  }
+  conversation.state = CONVERSATION_STATES.CHANNEL_EMERGENCY_LOCATION;
+  return saveResponse(conversation, messageId, getMessages(conversation.language || 'en').emergencyLocation);
 }
 
 function markMessageProcessed(conversation, messageId) {
@@ -68,8 +116,14 @@ async function processMessage({ phone, message, messageId, channel: messageChann
       return saveResponse(conversation, messageId, `${enMessages.welcome}\n\n${enMessages.languageSelection}`);
 
     case CONVERSATION_STATES.SELECT_LANGUAGE: {
-      const selectedLanguages = { '1': 'te', '2': 'hi', '3': 'en' };
-      const language = selectedLanguages[normalizedMessage];
+      const language = languageForMenuOption(normalizedMessage);
+
+      if (isMenuOption(normalizedMessage, CHANNEL_MENU_OPTIONS.SUPPORT)) {
+        return saveResponse(conversation, messageId, getMessages(conversation.language || 'en').contactSupport);
+      }
+      if (isMenuOption(normalizedMessage, CHANNEL_MENU_OPTIONS.EMERGENCY)) {
+        return startChannelEmergency(conversation, messageId);
+      }
 
       if (!language) {
         return saveResponse(conversation, messageId, enMessages.invalidLanguage);
@@ -79,6 +133,41 @@ async function processMessage({ phone, message, messageId, channel: messageChann
       conversation.state = CONVERSATION_STATES.COLLECT_NAME;
       return saveResponse(conversation, messageId, getMessages(language).askName);
     }
+
+    case CONVERSATION_STATES.CHANNEL_EMERGENCY_LOCATION: {
+      if (!normalizedMessage || normalizedMessage.length > 200) {
+        return saveResponse(conversation, messageId, getMessages(conversation.language || 'en').emergencyLocation);
+      }
+      const resolvedLocation = await geocodeLocation(normalizedMessage);
+      if (!resolvedLocation) {
+        return saveResponse(conversation, messageId, getMessages(conversation.language || 'en').emergencyLocationFailed);
+      }
+      conversation.data.emergencyLatitude = resolvedLocation.latitude;
+      conversation.data.emergencyLongitude = resolvedLocation.longitude;
+      conversation.data.emergencyLocationLabel = resolvedLocation.displayName || normalizedMessage;
+      conversation.state = CONVERSATION_STATES.CHANNEL_EMERGENCY_LOCATION_CONFIRM;
+      return saveResponse(conversation, messageId, getMessages(conversation.language || 'en')
+        .emergencyLocationConfirm(conversation.data.emergencyLocationLabel));
+    }
+
+    case CONVERSATION_STATES.CHANNEL_EMERGENCY_LOCATION_CONFIRM:
+      if (normalizedMessage === '2') {
+        conversation.state = CONVERSATION_STATES.CHANNEL_EMERGENCY_LOCATION;
+        conversation.data.emergencyLatitude = null;
+        conversation.data.emergencyLongitude = null;
+        conversation.data.emergencyLocationLabel = null;
+        return saveResponse(conversation, messageId, getMessages(conversation.language || 'en').emergencyLocation);
+      }
+      if (normalizedMessage !== '1') {
+        return saveResponse(conversation, messageId, getMessages(conversation.language || 'en')
+          .emergencyLocationConfirm(conversation.data.emergencyLocationLabel));
+      }
+      {
+        const result = await createChannelEmergency(conversation);
+        conversation.state = CONVERSATION_STATES.COMPLETED;
+        conversation.data.emergencyCaseId = result.emergency.caseId;
+        return saveResponse(conversation, messageId, emergencyResponseMessage(conversation.language || 'en', result));
+      }
 
     case CONVERSATION_STATES.COLLECT_NAME:
       if (!normalizedMessage || normalizedMessage.length > 100) {

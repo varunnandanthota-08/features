@@ -81,8 +81,28 @@ async function createOrUpdatePatient(patientData) {
   );
 }
 
+async function ensureEmergencyPatient(phone, source = 'SMS') {
+  const normalizedPhone = normalizePhone(phone);
+  if (!allowedSources.has(source)) throw new Error('Patient source is invalid');
+  return Patient.findOneAndUpdate(
+    { phone: normalizedPhone },
+    {
+      $setOnInsert: {
+        phone: normalizedPhone,
+        source
+      }
+    },
+    {
+      new: true,
+      upsert: true,
+      setDefaultsOnInsert: true
+    }
+  );
+}
+
 module.exports = {
   createOrUpdatePatient,
+  ensureEmergencyPatient,
   findByPhone,
   normalizePhone,
   validatePatientData

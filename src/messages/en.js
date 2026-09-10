@@ -1,6 +1,11 @@
 module.exports = {
   welcome: 'Welcome to Rural Health Support.',
-  languageSelection: 'Please select your language:\n\n1. Telugu\n2. Hindi\n3. English',
+  languageSelection: 'Please select your language:\n\nReply:\n1 - Telugu\n2 - Hindi\n3 - English\n4 - Contact / Support\n5 - Emergency SOS',
+  contactSupport: 'Please contact your local health worker for assistance.',
+  emergencyLocation: 'Emergency request received. Please share your village or location.',
+  emergencyLocationConfirm: location => `I understood your location as ${location}. Reply 1 to confirm or 2 to say your location again.`,
+  emergencyLocationFailed: 'I could not resolve that location. Please share your village or location again.',
+  emergencyRegistered: 'Emergency request received. A health worker has been alerted.',
   askName: 'Please enter your full name.',
   askAge: 'Please enter your age.',
   askGender: 'Please select your gender:\n\n1. Male\n2. Female\n3. Other',
@@ -10,7 +15,7 @@ module.exports = {
   invalidConfirmation: 'Please reply 1 to confirm or 2 to start again.',
   completed: 'Thank you.\n\nYour information has been successfully collected.',
   registrationFailed: 'We are sorry, we could not complete your registration right now.\nPlease try again shortly.',
-  invalidLanguage: 'Invalid option.\n\nPlease select:\n\n1. Telugu\n2. Hindi\n3. English',
+  invalidLanguage: 'Invalid option.\n\nReply 1, 2, 3, 4, or 5.',
   invalidAge: 'Please enter a valid age between 1 and 120.',
   invalidGender: 'Please select a valid option:\n\n1. Male\n2. Female\n3. Other'
 };

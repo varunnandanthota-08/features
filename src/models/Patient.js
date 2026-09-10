@@ -9,35 +9,35 @@ const patientSchema = new mongoose.Schema({
   },
   name: {
     type: String,
-    required: true
+    default: null
   },
   age: {
     type: Number,
-    required: true,
     min: 1,
-    max: 120
+    max: 120,
+    default: null
   },
   gender: {
     type: String,
-    required: true,
-    enum: ['male', 'female', 'other', 'prefer_not_to_say']
+    enum: ['male', 'female', 'other', 'prefer_not_to_say'],
+    default: null
   },
   location: {
     village: {
       type: String,
-      required: true
+      default: null
     },
     latitude: { type: Number, min: -90, max: 90 },
     longitude: { type: Number, min: -180, max: 180 }
   },
   language: {
     type: String,
-    required: true,
-    enum: ['te', 'hi', 'en']
+    enum: ['te', 'hi', 'en'],
+    default: null
   },
   symptomsDescription: {
     type: String,
-    required: true
+    default: null
   },
   source: {
     type: String,

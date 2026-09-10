@@ -2,7 +2,8 @@ const mockPatients = new Map();
 
 jest.mock('../../src/models/Patient', () => ({
   findOne: jest.fn(async ({ phone }) => mockPatients.get(phone) || null),
-  findOneAndUpdate: jest.fn(async ({ phone }, { $set: update }) => {
+  findOneAndUpdate: jest.fn(async ({ phone }, updateOperation) => {
+    const update = updateOperation.$set || updateOperation.$setOnInsert || {};
     const patient = { ...(mockPatients.get(phone) || {}), ...update };
     mockPatients.set(phone, patient);
     return patient;
@@ -14,6 +15,7 @@ const {
   createOrUpdatePatient,
   findByPhone,
   normalizePhone
+  , ensureEmergencyPatient
 } = require('../../src/services/patient.service');
 
 const validPatient = {
@@ -66,6 +68,17 @@ describe('patient service', () => {
     expect(await findByPhone(validPatient.phone)).toMatchObject({
       phone: '+919876543210',
       source: 'DASHBOARD'
+    });
+  });
+
+  test('ensures one minimal SMS emergency patient without profile data', async () => {
+    await ensureEmergencyPatient('sms:+919876543210', 'SMS');
+    await ensureEmergencyPatient('+919876543210', 'SMS');
+
+    expect(mockPatients.size).toBe(1);
+    expect(await findByPhone('+919876543210')).toMatchObject({
+      phone: '+919876543210',
+      source: 'SMS'
     });
   });
 

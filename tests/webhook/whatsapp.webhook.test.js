@@ -77,7 +77,7 @@ describe('WhatsApp webhook', () => {
     expect(response.body.conversation.state).toBe('SELECT_LANGUAGE');
     expect(sendMessage).toHaveBeenCalledWith(
       '+919876543210',
-      'Welcome to Rural Health Support.\n\nPlease select your language:\n\n1. Telugu\n2. Hindi\n3. English'
+      'Welcome to Rural Health Support.\n\nPlease select your language:\n\nReply:\n1 - Telugu\n2 - Hindi\n3 - English\n4 - Contact / Support\n5 - Emergency SOS'
     );
 
     const nextResponse = await request(app)

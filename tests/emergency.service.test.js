@@ -113,6 +113,30 @@ describe('emergency service', () => {
     }));
   });
 
+  test('persists an assigned SMS emergency with real patient and health centre coordinates', async () => {
+    const result = await createEmergencyCase({
+      phone: '+919392123042',
+      source: 'SMS',
+      reason: 'Emergency request via SMS',
+      location: { latitude: 17.4, longitude: 78.4 },
+      locationLabel: 'Madhapur, Hyderabad, India',
+      status: 'ALERTED'
+    });
+
+    expect(result.selectedFacility).toMatchObject({
+      healthCenterId: 'HC-EMERGENCY',
+      location: { latitude: 17.5, longitude: 78.5 }
+    });
+    expect(mockEmergencyCreate).toHaveBeenCalledWith(expect.objectContaining({
+      source: 'SMS',
+      location: { latitude: 17.4, longitude: 78.4 },
+      locationStatus: 'RESOLVED',
+      assignedHealthCenterId: 'facility-emergency',
+      assignmentStatus: 'ASSIGNED',
+      referredFacilityId: 'facility-emergency'
+    }));
+  });
+
   test('does not assign a centre when patient coordinates are unavailable', async () => {
     await createEmergencyCase({
       phone: '+919392123042',

@@ -5,6 +5,7 @@ const { normalizeWhatsAppNumber } = require('../config/twilio');
 const { createOrUpdatePatient } = require('./patient.service');
 const { createEmergencyCase, getPatientLocation } = require('./emergency.service');
 const { geocodeLocation } = require('./geocoding.service');
+const { languageForMenuOption } = require('../constants/channelMenu');
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 const channel = 'IVR';
@@ -323,7 +324,7 @@ async function handleLanguage(req) {
       response.hangup();
       return { twiml: response.toString() };
     }
-    const language = { '1': 'te', '2': 'hi', '3': 'en' }[input.digits];
+    const language = languageForMenuOption(input.digits);
     if (!language) return { twiml: twimlForLanguage() };
     session.language = language;
     session.state = CONVERSATION_STATES.IVR_COLLECT_NAME;
