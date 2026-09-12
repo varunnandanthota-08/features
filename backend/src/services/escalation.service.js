@@ -29,6 +29,7 @@ function shouldEscalate(caseRecord, now = new Date()) {
     || caseRecord?.escalationStatus === ESCALATION_STATUSES.ACKNOWLEDGED_AFTER_ESCALATION;
   const acknowledged = Boolean(acknowledgementDate(caseRecord))
     || ['ACKNOWLEDGED', 'RESPONDING'].includes(caseRecord?.status);
+  const referred = caseRecord?.status === 'REFERRED';
   const resolved = caseRecord?.status === 'RESOLVED'
     || caseRecord?.escalationStatus === ESCALATION_STATUSES.RESOLVED;
   const elapsedMinutes = Number.isFinite(createdAt.getTime())
@@ -37,9 +38,10 @@ function shouldEscalate(caseRecord, now = new Date()) {
   const overdue = elapsedMinutes >= slaMinutes;
 
   return {
-    shouldEscalate: !alreadyEscalated && !acknowledged && !resolved && overdue,
+    shouldEscalate: !alreadyEscalated && !acknowledged && !referred && !resolved && overdue,
     alreadyEscalated,
     acknowledged,
+    referred,
     resolved,
     overdue,
     category: caseCategory(caseRecord),

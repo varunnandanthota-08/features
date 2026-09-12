@@ -28,13 +28,19 @@ const caseSchema = new mongoose.Schema({
     longitude: { type: Number, min: -180, max: 180 }
   },
   assignedHealthCenterId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthCenter', default: null },
+  sourceHealthCenterId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthCenter', default: null },
+  referredToHealthCenterId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthCenter', default: null },
+  referralId: { type: String, ref: 'Referral', default: null, index: true, trim: true },
+  referredAt: { type: Date, default: null },
   assignedWorkerId: { type: String, default: null, trim: true },
   status: {
     type: String,
-    enum: ['NEW', 'ASSIGNED', 'ACKNOWLEDGED', 'UNDER_REVIEW', 'IN_PROGRESS', 'RESOLVED'],
+    enum: ['NEW', 'ASSIGNED', 'ACKNOWLEDGED', 'UNDER_REVIEW', 'IN_PROGRESS', 'REFERRED', 'RESOLVED'],
     default: 'NEW'
   },
   acknowledgedAt: { type: Date, default: null },
+  acknowledgedByHealthCenterId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthCenter', default: null },
+  acknowledgedByWorkerId: { type: String, default: null, trim: true },
   resolvedAt: { type: Date, default: null },
   escalationLevel: { type: Number, min: 0, default: 0 },
   escalationStatus: {

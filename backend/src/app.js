@@ -1,6 +1,7 @@
 require('dotenv').config();
 
 const express = require('express');
+const cors = require('cors');
 const { connectToDatabase } = require('./config/db');
 const whatsappRoutes = require('./routes/whatsapp.routes');
 const testWhatsappRoutes = require('./routes/testWhatsapp.routes');
@@ -17,6 +18,10 @@ const { startEscalationMonitor, stopEscalationMonitor } = require('./services/es
 const app = express();
 const port = Number(process.env.PORT) || 5000;
 
+app.use(cors({
+  origin: 'http://localhost:5173',
+  methods: ['GET', 'POST', 'PATCH', 'OPTIONS']
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 

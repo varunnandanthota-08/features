@@ -41,6 +41,7 @@ async function createNormalCaseFromConversation(conversation, patient) {
 }
 
 async function createChannelEmergency(conversation) {
+  await ensureEmergencyPatient(conversation.phone, conversation.channel);
   return createEmergencyCase({
     phone: conversation.phone,
     source: conversation.channel,

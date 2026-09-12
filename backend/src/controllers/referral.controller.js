@@ -1,5 +1,6 @@
 const Referral = require('../models/Referral');
 const HealthCenter = require('../models/HealthCenter');
+const { createReferralWithCase, updateReferralStatusWithCase } = require('../services/referral.service');
 
 const allowedStatuses = ['PENDING', 'ACCEPTED', 'COMPLETED', 'CANCELLED'];
 const validTransitions = {
@@ -16,7 +17,7 @@ function badRequest(message) {
 }
 
 function validateCreateInput(body) {
-  for (const field of ['referralId', 'patientId', 'fromHealthCenterId', 'toHealthCenterId', 'reason']) {
+  for (const field of ['referralId', 'caseId', 'patientId', 'fromHealthCenterId', 'toHealthCenterId', 'reason']) {
     if (typeof body[field] !== 'string' || !body[field].trim()) {
       throw badRequest(`${field} is required`);
     }
@@ -58,11 +59,7 @@ async function createReferral(req, res) {
       return res.status(404).json({ success: false, message: 'Destination health centre not found' });
     }
 
-    const referral = await Referral.create({
-      ...body,
-      status: 'PENDING',
-      statusHistory: [{ status: 'PENDING', changedAt: new Date() }]
-    });
+    const referral = await createReferralWithCase(body, { sourceHealthCenter, destinationHealthCenter });
     return res.status(201).json({ success: true, data: referral });
   } catch (error) {
     return sendError(res, error, 'Unable to create referral');
@@ -111,10 +108,7 @@ async function updateReferralStatus(req, res) {
       throw badRequest('Invalid referral status transition');
     }
 
-    referral.status = requestedStatus;
-    if (!Array.isArray(referral.statusHistory)) referral.statusHistory = [];
-    referral.statusHistory.push({ status: requestedStatus, changedAt: new Date() });
-    await referral.save();
+    await updateReferralStatusWithCase(referral, requestedStatus);
     return res.status(200).json({ success: true, data: referral });
   } catch (error) {
     return sendError(res, error, 'Unable to update referral status');

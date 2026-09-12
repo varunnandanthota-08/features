@@ -1,4 +1,5 @@
 const HealthCenter = require('../models/HealthCenter');
+const { geocodeLocation } = require('../services/geocoding.service');
 
 function badRequest(message) {
   const error = new Error(message);
@@ -116,6 +117,18 @@ async function getHealthCenters(req, res) {
     return res.status(200).json({ success: true, data: healthCenters });
   } catch (error) {
     return sendError(res, error, 'Unable to retrieve health centres');
+  }
+}
+
+async function geocodeHealthCenterLocation(req, res) {
+  try {
+    const location = typeof req.query.location === 'string' ? req.query.location.trim() : '';
+    if (!location) throw badRequest('location is required');
+    const coordinates = await geocodeLocation(location);
+    if (!coordinates) return res.status(404).json({ success: false, message: 'Location could not be resolved' });
+    return res.status(200).json({ success: true, data: coordinates });
+  } catch (error) {
+    return sendError(res, error, 'Unable to resolve location');
   }
 }
 
@@ -378,6 +391,7 @@ async function searchHealthCenters(req, res) {
 module.exports = {
   createHealthCenter,
   getHealthCenters,
+  geocodeHealthCenterLocation,
   getHealthCenterById,
   updateHealthCenterAvailability,
   searchHealthCenters,

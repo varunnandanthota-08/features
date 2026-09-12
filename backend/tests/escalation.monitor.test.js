@@ -1,5 +1,12 @@
+jest.mock('../src/models/Referral', () => ({ find: jest.fn() }));
+jest.mock('../src/models/Case', () => ({ findOne: jest.fn() }));
+
+const mockReferralFind = require('../src/models/Referral').find;
+const mockCaseFindOne = require('../src/models/Case').findOne;
+
 const {
   checkEscalations,
+  eligibleCaseQuery,
   eligibleEmergencyQuery,
   startEscalationMonitor,
   stopEscalationMonitor,
@@ -29,6 +36,13 @@ describe('escalation monitor', () => {
     jest.useRealTimers();
   });
 
+  beforeEach(() => {
+    mockReferralFind.mockReset();
+    mockReferralFind.mockResolvedValue([]);
+    mockCaseFindOne.mockReset();
+    mockCaseFindOne.mockResolvedValue(null);
+  });
+
   test('queries only assigned, active, unacknowledged, level-zero cases', () => {
     expect(eligibleEmergencyQuery()).toEqual({
       status: { $in: ['REGISTERED', 'ALERTED', 'RESPONDING'] },
@@ -37,6 +51,115 @@ describe('escalation monitor', () => {
       escalationLevel: 0,
       escalationStatus: { $nin: ['ESCALATED', 'ACKNOWLEDGED_AFTER_ESCALATION', 'RESOLVED'] }
     });
+  });
+
+  test('does not query or escalate referred normal cases', async () => {
+    expect(eligibleCaseQuery().status.$in).not.toContain('REFERRED');
+    const record = overdueCase({ caseId: 'CASE-REFERRED-1', status: 'REFERRED', type: 'CASE' });
+    const caseModel = { find: jest.fn().mockResolvedValue([record]) };
+
+    await expect(checkEscalations({
+      emergencyCaseModel: { find: jest.fn().mockResolvedValue([]) },
+      normalCaseModel: caseModel,
+      now: new Date('2026-09-10T11:00:00.000Z'),
+      logger: { log: jest.fn(), error: jest.fn() }
+    })).resolves.toEqual([]);
+    expect(record.save).not.toHaveBeenCalled();
+  });
+
+  test('escalates an overdue pending referral once and keeps it pending', async () => {
+    const referral = {
+      referralId: 'REF-MONITOR-1',
+      caseId: 'CASE-REF-MONITOR-1',
+      status: 'PENDING',
+      acceptanceDueAt: new Date('2026-09-10T10:00:00.000Z'),
+      fromHealthCenterId: 'HC-A',
+      toHealthCenterId: 'HC-B',
+      escalationStatus: 'NOT_ESCALATED',
+      escalationLevel: 0,
+      escalationHistory: [],
+      save: jest.fn().mockResolvedValue(undefined)
+    };
+    mockReferralFind.mockResolvedValue([referral]);
+    const caseRecord = {
+      caseId: referral.caseId,
+      referredToHealthCenterId: 'hc-b',
+      save: jest.fn().mockResolvedValue(undefined)
+    };
+    mockCaseFindOne.mockResolvedValue(caseRecord);
+
+    const result = await checkEscalations({
+      caseModel: { find: jest.fn().mockResolvedValue([]) },
+      referralModel: { find: mockReferralFind },
+      now: new Date('2026-09-10T10:00:01.000Z'),
+      referralTargetSelector: async () => ({ healthCenter: { _id: 'hc-c', healthCenterId: 'HC-C' } }),
+      logger: { log: jest.fn(), error: jest.fn() }
+    });
+
+    expect(result).toEqual([referral]);
+    expect(referral.status).toBe('PENDING');
+    expect(referral.toHealthCenterId).toBe('HC-C');
+    expect(referral.escalationLevel).toBe(1);
+    expect(referral.escalationStatus).toBe('ESCALATED');
+    expect(referral.save).toHaveBeenCalled();
+    expect(caseRecord.referredToHealthCenterId).toBe('hc-c');
+    expect(caseRecord.save).toHaveBeenCalled();
+  });
+
+  test('does not escalate a pending referral before its acceptance deadline', async () => {
+    const referral = {
+      referralId: 'REF-BEFORE-SLA',
+      status: 'PENDING',
+      acceptanceDueAt: new Date('2026-09-10T10:01:00.000Z'),
+      escalationStatus: 'NOT_ESCALATED',
+      save: jest.fn()
+    };
+    mockReferralFind.mockResolvedValue([referral]);
+    const result = await checkEscalations({
+      caseModel: { find: jest.fn().mockResolvedValue([]) },
+      referralModel: { find: mockReferralFind },
+      now: new Date('2026-09-10T10:00:59.000Z'),
+      logger: { log: jest.fn(), error: jest.fn() }
+    });
+    expect(result).toEqual([]);
+    expect(referral.save).not.toHaveBeenCalled();
+  });
+
+  test('does not repeatedly escalate an already escalated referral', async () => {
+    const referral = {
+      referralId: 'REF-ALREADY-ESCALATED',
+      status: 'PENDING',
+      acceptanceDueAt: new Date('2026-09-10T10:00:00.000Z'),
+      escalationStatus: 'ESCALATED',
+      escalationLevel: 1,
+      save: jest.fn()
+    };
+    mockReferralFind.mockResolvedValue([referral]);
+    const result = await checkEscalations({
+      caseModel: { find: jest.fn().mockResolvedValue([]) },
+      referralModel: { find: mockReferralFind },
+      now: new Date('2026-09-10T11:00:00.000Z'),
+      logger: { log: jest.fn(), error: jest.fn() }
+    });
+    expect(result).toEqual([]);
+    expect(referral.save).not.toHaveBeenCalled();
+  });
+
+  test.each(['ACCEPTED', 'CANCELLED'])('does not escalate %s referrals', async status => {
+    mockReferralFind.mockResolvedValue([{
+      referralId: `REF-${status}`,
+      status,
+      acceptanceDueAt: new Date('2026-09-10T10:00:00.000Z'),
+      escalationStatus: 'NOT_ESCALATED',
+      save: jest.fn()
+    }]);
+    const result = await checkEscalations({
+      caseModel: { find: jest.fn().mockResolvedValue([]) },
+      referralModel: { find: mockReferralFind },
+      now: new Date('2026-09-10T10:01:00.000Z'),
+      logger: { log: jest.fn(), error: jest.fn() }
+    });
+    expect(result).toEqual([]);
   });
 
   test('automatically escalates an overdue emergency without assigning a fake target', async () => {

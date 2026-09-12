@@ -9,6 +9,13 @@ const { escalateCase, ESCALATION_STATUSES } = require('./escalation.service');
 const emergencySources = new Set(['PHONE_IVR', 'WHATSAPP', 'SMS', 'HEALTH_WORKER', 'DASHBOARD', 'AUTOMATIC_DETECTION']);
 const emergencyStatuses = new Set(['REGISTERED', 'ALERTED', 'ACKNOWLEDGED', 'RESPONDING', 'REFERRED', 'ESCALATED', 'RESOLVED']);
 const activeEmergencyStatuses = ['ALERTED', 'ACKNOWLEDGED', 'RESPONDING', 'ESCALATED'];
+const recommendationDoctorFields = {
+  GENERAL: 'general',
+  ENT: 'ent',
+  CARDIOLOGY: 'cardiology',
+  PEDIATRICS: 'pediatrics',
+  GYNECOLOGY: 'gynecology'
+};
 
 function validationError(message) {
   const error = new Error(message);
@@ -55,8 +62,10 @@ function facilityData(healthCenter, distance) {
   };
 }
 
-async function findSuitableHealthCenter({ location, village, excludeHealthCenterId } = {}) {
+async function findSuitableHealthCenter({ location, village, excludeHealthCenterId, service, equipment, emergency = false } = {}) {
   const healthCenters = await HealthCenter.find({});
+  const normalizedService = typeof service === 'string' ? service.trim().toUpperCase() : null;
+  const normalizedEquipment = typeof equipment === 'string' ? equipment.trim().toLowerCase() : null;
   const candidates = healthCenters
     .map(healthCenter => {
       const availableCapacity = healthCenter.capacity - (healthCenter.currentPatientLoad || 0);
@@ -66,8 +75,18 @@ async function findSuitableHealthCenter({ location, village, excludeHealthCenter
       return { healthCenter, availableCapacity, distance, villageMatch };
     })
     .filter(candidate => !excludeHealthCenterId
-      || String(candidate.healthCenter._id) !== String(excludeHealthCenterId))
+      || (String(candidate.healthCenter._id) !== String(excludeHealthCenterId)
+        && String(candidate.healthCenter.healthCenterId) !== String(excludeHealthCenterId)))
     .filter(candidate => candidate.availableCapacity > 0)
+    .filter(candidate => {
+      if (!normalizedService) return true;
+      const serviceAvailable = (candidate.healthCenter.services || [])
+        .some(value => value.trim().toUpperCase() === normalizedService);
+      const doctorField = recommendationDoctorFields[normalizedService];
+      return serviceAvailable && (!doctorField || Number(candidate.healthCenter.doctors?.[doctorField]) > 0);
+    })
+    .filter(candidate => !normalizedEquipment || candidate.healthCenter.equipment?.[normalizedEquipment] === true)
+    .filter(candidate => !emergency || candidate.healthCenter.emergencyAvailable === true)
     .sort((first, second) => (
       Number(second.healthCenter.emergencyAvailable === true) - Number(first.healthCenter.emergencyAvailable === true)
       || (location

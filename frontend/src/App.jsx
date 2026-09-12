@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import AppLayout from './components/AppLayout';
+import CaseDetailsPage from './pages/CaseDetailsPage';
 import HomePage from './pages/HomePage';
 
 function PlaceholderPage({ title }) {
@@ -17,6 +18,7 @@ export default function App() {
     <Routes>
       <Route element={<AppLayout />}>
         <Route index element={<HomePage />} />
+        <Route path="case-details/:kind/:caseId" element={<CaseDetailsPage />} />
         <Route path="emergency-alerts" element={<PlaceholderPage title="Emergency alerts" />} />
         <Route path="cases" element={<PlaceholderPage title="Cases" />} />
         <Route path="health-centres" element={<PlaceholderPage title="Health centres" />} />

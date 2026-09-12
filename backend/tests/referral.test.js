@@ -2,20 +2,27 @@ const request = require('supertest');
 
 const mockReferral = {
   create: jest.fn(),
+  deleteOne: jest.fn(),
   find: jest.fn(),
   findOne: jest.fn()
 };
 const mockHealthCenter = {
   findOne: jest.fn()
 };
+const mockCase = {
+  findOne: jest.fn()
+};
+let mockCaseRecord;
 
 jest.mock('../src/models/Referral', () => mockReferral);
 jest.mock('../src/models/HealthCenter', () => mockHealthCenter);
+jest.mock('../src/models/Case', () => mockCase);
 
 const { app } = require('../src/app');
 
 const validReferral = {
   referralId: 'REF-001',
+  caseId: 'CASE-001',
   patientId: 'PAT-001',
   fromHealthCenterId: 'HC-001',
   toHealthCenterId: 'HC-002',
@@ -60,8 +67,23 @@ function referralForStatus(status) {
 describe('Referral API', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockHealthCenter.findOne.mockResolvedValue({ healthCenterId: 'HC-001' });
+    mockHealthCenter.findOne.mockImplementation(({ healthCenterId }) => Promise.resolve(
+      healthCenterId === 'HC-002'
+        ? { _id: 'mongo-hc-002', healthCenterId: 'HC-002' }
+        : { _id: 'mongo-hc-001', healthCenterId: 'HC-001' }
+    ));
+    mockCaseRecord = {
+      caseId: 'CASE-001',
+      patientId: 'PAT-001',
+      assignedHealthCenterId: 'mongo-hc-001',
+      sourceHealthCenterId: 'mongo-hc-001',
+      referredToHealthCenterId: 'mongo-hc-002',
+      status: 'ASSIGNED',
+      save: jest.fn().mockResolvedValue(undefined)
+    };
+    mockCase.findOne.mockResolvedValue(mockCaseRecord);
     mockReferral.create.mockResolvedValue(createdReferral);
+    mockReferral.deleteOne.mockResolvedValue({ deletedCount: 1 });
     mockReferral.findOne.mockResolvedValue(createdReferral);
     mockReferral.find.mockResolvedValue([createdReferral]);
   });
@@ -78,6 +100,52 @@ describe('Referral API', () => {
     }));
     expect(response.body.data.statusHistory).toHaveLength(1);
     expect(response.body.data.statusHistory[0].status).toBe('PENDING');
+    expect(mockCaseRecord.status).toBe('REFERRED');
+    expect(mockCaseRecord.referralId).toBe('REF-001');
+    expect(mockCaseRecord.referredToHealthCenterId).toBe('mongo-hc-002');
+    expect(mockReferral.create).toHaveBeenCalledWith(expect.objectContaining({
+      acceptanceDueAt: expect.any(Date),
+      status: 'PENDING'
+    }));
+  });
+
+  test('accepting a referral moves the Case to the destination in progress', async () => {
+    const referral = referralForStatus('PENDING');
+    mockReferral.findOne.mockResolvedValue(referral);
+    mockCaseRecord.status = 'REFERRED';
+    mockCaseRecord.referredToHealthCenterId = 'mongo-hc-002';
+
+    const response = await request(app).patch('/api/referrals/REF-001/status').send({ status: 'ACCEPTED' });
+
+    expect(response.status).toBe(200);
+    expect(mockCaseRecord.status).toBe('IN_PROGRESS');
+    expect(mockCaseRecord.assignedHealthCenterId).toBe('mongo-hc-002');
+  });
+
+  test('completing a referral does not resolve the Case', async () => {
+    const referral = referralForStatus('ACCEPTED');
+    mockReferral.findOne.mockResolvedValue(referral);
+    mockCaseRecord.status = 'IN_PROGRESS';
+    mockCaseRecord.assignedHealthCenterId = 'mongo-hc-002';
+
+    const response = await request(app).patch('/api/referrals/REF-001/status').send({ status: 'COMPLETED' });
+
+    expect(response.status).toBe(200);
+    expect(mockCaseRecord.status).toBe('IN_PROGRESS');
+    expect(mockCaseRecord.assignedHealthCenterId).toBe('mongo-hc-002');
+  });
+
+  test('cancelling a pending referral restores the original Case assignment', async () => {
+    const referral = referralForStatus('PENDING');
+    mockReferral.findOne.mockResolvedValue(referral);
+    mockCaseRecord.status = 'REFERRED';
+    mockCaseRecord.assignedHealthCenterId = 'mongo-hc-001';
+
+    const response = await request(app).patch('/api/referrals/REF-001/status').send({ status: 'CANCELLED' });
+
+    expect(response.status).toBe(200);
+    expect(mockCaseRecord.status).toBe('ASSIGNED');
+    expect(mockCaseRecord.assignedHealthCenterId).toBe('mongo-hc-001');
   });
 
   test('rejects a duplicate referralId with 409', async () => {

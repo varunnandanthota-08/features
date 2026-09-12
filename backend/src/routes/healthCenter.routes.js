@@ -2,6 +2,7 @@ const express = require('express');
 const {
   createHealthCenter,
   getHealthCenters,
+  geocodeHealthCenterLocation,
   getHealthCenterById,
   updateHealthCenterAvailability,
   searchHealthCenters,
@@ -15,6 +16,7 @@ router.post('/', createHealthCenter);
 router.get('/', getHealthCenters);
 router.get('/nearby', getNearbyHealthCenters);
 router.get('/recommend', recommendHealthCenters);
+router.get('/geocode', geocodeHealthCenterLocation);
 router.get('/search', searchHealthCenters);
 router.patch('/:healthCenterId/availability', updateHealthCenterAvailability);
 router.get('/:healthCenterId', getHealthCenterById);

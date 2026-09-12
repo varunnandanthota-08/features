@@ -27,6 +27,23 @@ describe('geocoding service', () => {
     await expect(geocodeLocation('Unknown place', { fetchImpl, timeoutMs: 50 })).resolves.toBeNull();
   });
 
+  test('retries a street-prefixed locality with the normalized locality query', async () => {
+    const fetchImpl = jest.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [{ lat: '18.3145348', lon: '80.3458816', display_name: 'Mulugu, Telangana, India' }]
+      });
+
+    await expect(geocodeLocation('main road mulugu, telangana', { fetchImpl })).resolves.toEqual({
+      latitude: 18.3145348,
+      longitude: 80.3458816,
+      displayName: 'Mulugu, Telangana, India'
+    });
+    expect(fetchImpl.mock.calls[1][0]).toContain('q=mulugu%2C+telangana');
+  });
+
   test('returns null for invalid coordinates', async () => {
     const fetchImpl = jest.fn().mockResolvedValue({
       ok: true,

@@ -7,7 +7,7 @@ const { findByPhone } = require('./patient.service');
 const { findSuitableHealthCenter } = require('./emergency.service');
 const { escalateCase, ESCALATION_STATUSES } = require('./escalation.service');
 
-const activeCaseStatuses = ['NEW', 'ASSIGNED', 'ACKNOWLEDGED', 'UNDER_REVIEW', 'IN_PROGRESS'];
+const activeCaseStatuses = ['NEW', 'ASSIGNED', 'ACKNOWLEDGED', 'UNDER_REVIEW', 'IN_PROGRESS', 'REFERRED'];
 const caseSources = new Set(['PHONE_IVR', 'WHATSAPP', 'SMS', 'DASHBOARD']);
 
 function validationError(message, statusCode = 400) {
@@ -52,6 +52,7 @@ async function createCase({ patientId, phone, source, complaint, location } = {}
     complaint: complaint.trim(),
     location: normalizedLocation,
     assignedHealthCenterId: selected.healthCenter?._id || null,
+    sourceHealthCenterId: selected.healthCenter?._id || null,
     status: selected.healthCenter ? 'ASSIGNED' : 'NEW'
   });
   return { case: record, patient, selectedFacility: selected.facility };
@@ -87,11 +88,27 @@ async function getCase(caseId) {
   return record;
 }
 
-async function acknowledgeCase(caseId) {
+async function acknowledgeCase(caseId, { healthCenterId, healthWorkerId } = {}) {
   const record = await getCase(caseId);
+  if (typeof healthCenterId !== 'string' || !healthCenterId.trim()) {
+    throw validationError('healthCenterId is required');
+  }
+  if (typeof healthWorkerId !== 'string' || !healthWorkerId.trim()) {
+    throw validationError('healthWorkerId is required');
+  }
   if (record.status === 'RESOLVED') throw validationError('Resolved case cannot be acknowledged');
+  const actingHealthCenter = await HealthCenter.findOne({ healthCenterId: healthCenterId.trim() });
+  if (!actingHealthCenter) throw Object.assign(new Error('Health centre not found'), { statusCode: 404 });
+  const expectedHealthCenterId = record.escalationStatus === ESCALATION_STATUSES.ESCALATED
+    ? record.escalatedToHealthCenterId
+    : record.assignedHealthCenterId;
+  if (!expectedHealthCenterId || String(expectedHealthCenterId) !== String(actingHealthCenter._id)) {
+    throw validationError('Health centre is not authorized to acknowledge this case', 403);
+  }
   record.status = 'ACKNOWLEDGED';
   record.acknowledgedAt = new Date();
+  record.acknowledgedByHealthCenterId = actingHealthCenter._id;
+  record.acknowledgedByWorkerId = healthWorkerId.trim();
   if (record.escalationStatus === ESCALATION_STATUSES.ESCALATED) record.escalationStatus = ESCALATION_STATUSES.ACKNOWLEDGED_AFTER_ESCALATION;
   await record.save();
   return record;

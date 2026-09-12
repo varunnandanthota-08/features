@@ -3,6 +3,8 @@ const Case = require('../models/Case');
 const { shouldEscalate, escalateCase } = require('./escalation.service');
 const { findEscalationTarget } = require('./emergency.service');
 const { findEscalationTarget: findNormalEscalationTarget } = require('./case.service');
+const Referral = require('../models/Referral');
+const { escalatePendingReferral } = require('./referral.service');
 
 const DEFAULT_CHECK_INTERVAL_MS = 30 * 1000;
 const ESCALATION_CHECK_INTERVAL_MS = Number(process.env.ESCALATION_CHECK_INTERVAL_MS) > 0
@@ -25,7 +27,7 @@ function eligibleEmergencyQuery() {
 
 function eligibleCaseQuery() {
   return {
-    status: { $in: activeCaseStatuses },
+    status: { $in: activeCaseStatuses.filter(status => status !== 'REFERRED') },
     assignedHealthCenterId: { $ne: null },
     acknowledgedAt: null,
     escalationLevel: 0,
@@ -40,7 +42,9 @@ async function checkEscalations({
   now = new Date(),
   logger = console,
   targetSelector = findEscalationTarget,
-  normalTargetSelector = findNormalEscalationTarget
+  normalTargetSelector = findNormalEscalationTarget,
+  referralModel = Referral,
+  referralTargetSelector
 } = {}) {
   const emergencyModel = caseModel || emergencyCaseModel;
   const emergencyCandidates = await emergencyModel.find(eligibleEmergencyQuery());
@@ -54,6 +58,23 @@ async function checkEscalations({
     const result = await escalateCase(caseRecord, now, { targetSelector: selector });
     escalated.push(result.case);
     logger.log(`[Escalation] Auto-escalated ${caseRecord.type === 'EMERGENCY' ? 'emergency' : 'case'} ${caseRecord.caseId} at level ${result.case.escalationLevel}`);
+  }
+
+  const referralCandidates = referralModel === Referral
+    && (caseModel || emergencyCaseModel !== EmergencyCase || normalCaseModel !== Case)
+    ? []
+    : await referralModel.find({
+      status: 'PENDING',
+      acceptanceDueAt: { $lte: now },
+      escalationStatus: { $ne: 'ESCALATED' }
+    });
+  for (const referral of referralCandidates) {
+    const escalatedReferral = await escalatePendingReferral(referral, now, {
+      targetSelector: referralTargetSelector
+    });
+    if (!escalatedReferral) continue;
+    escalated.push(escalatedReferral);
+    logger.log(`[Escalation] Referral ${referral.referralId} moved to ${referral.toHealthCenterId || 'no available target'}`);
   }
 
   return escalated;

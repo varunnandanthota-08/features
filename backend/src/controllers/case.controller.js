@@ -49,7 +49,7 @@ async function getActiveCases(req, res) {
 
 async function acknowledgeCase(req, res) {
   try {
-    return res.status(200).json(caseResponse(await caseService.acknowledgeCase(req.params.caseId)));
+    return res.status(200).json(caseResponse(await caseService.acknowledgeCase(req.params.caseId, req.body || {})));
   } catch (error) {
     return sendError(res, error, 'Unable to acknowledge case');
   }
