@@ -50,7 +50,7 @@ async function createEmergency(req, res) {
 
 async function acknowledgeEmergency(req, res) {
   try {
-    const emergency = await emergencyService.acknowledgeEmergency(req.params.caseId, req.body?.acknowledgedBy);
+    const emergency = await emergencyService.acknowledgeEmergency(req.params.caseId, req.user?.username || req.body?.acknowledgedBy, { authorizedHealthCenterId: req.user?.healthCenterId });
     return res.status(200).json(emergencyResponse(emergency, null, null));
   } catch (error) {
     return sendError(res, error, 'Unable to acknowledge emergency case');
@@ -59,7 +59,7 @@ async function acknowledgeEmergency(req, res) {
 
 async function escalateEmergency(req, res) {
   try {
-    const emergency = await emergencyService.escalateEmergency(req.params.caseId);
+    const emergency = await emergencyService.escalateEmergency(req.params.caseId, { authorizedHealthCenterId: req.user?.healthCenterId });
     return res.status(200).json(emergencyResponse(emergency, null, null));
   } catch (error) {
     return sendError(res, error, 'Unable to escalate emergency case');
@@ -68,7 +68,7 @@ async function escalateEmergency(req, res) {
 
 async function resolveEmergency(req, res) {
   try {
-    const emergency = await emergencyService.resolveEmergency(req.params.caseId);
+    const emergency = await emergencyService.resolveEmergency(req.params.caseId, { authorizedHealthCenterId: req.user?.healthCenterId });
     return res.status(200).json(emergencyResponse(emergency, null, null));
   } catch (error) {
     return sendError(res, error, 'Unable to resolve emergency case');
@@ -77,7 +77,7 @@ async function resolveEmergency(req, res) {
 
 async function getEmergency(req, res) {
   try {
-    const emergency = await emergencyService.getEmergencyCase(req.params.caseId);
+    const emergency = await emergencyService.getEmergencyCase(req.params.caseId, { authorizedHealthCenterId: req.user?.healthCenterId });
     return res.status(200).json(emergencyResponse(emergency, null, null));
   } catch (error) {
     return sendError(res, error, 'Unable to retrieve emergency case');
@@ -86,7 +86,7 @@ async function getEmergency(req, res) {
 
 async function getActiveEmergencies(req, res) {
   try {
-    const emergencies = await emergencyService.getActiveEmergencies();
+    const emergencies = await emergencyService.getActiveEmergencies({ authorizedHealthCenterId: req.user?.healthCenterId });
     return res.status(200).json({
       success: true,
       data: emergencies,

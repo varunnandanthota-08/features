@@ -47,6 +47,9 @@ function sendError(res, error, fallbackMessage) {
 async function createReferral(req, res) {
   try {
     const body = req.body || {};
+    if (req.user && req.user.role === 'HEALTH_WORKER') {
+      body.fromHealthCenterId = req.user.healthCenterId; // Prevent spoofing
+    }
     validateCreateInput(body);
 
     const sourceHealthCenter = await HealthCenter.findOne({ healthCenterId: body.fromHealthCenterId.trim() });
@@ -70,6 +73,11 @@ async function getReferralById(req, res) {
   try {
     const referral = await Referral.findOne({ referralId: req.params.referralId });
     if (!referral) return res.status(404).json({ success: false, message: 'Referral not found' });
+    if (req.user && req.user.role === 'HEALTH_WORKER') {
+      if (referral.fromHealthCenterId !== req.user.healthCenterId && referral.toHealthCenterId !== req.user.healthCenterId) {
+        return res.status(403).json({ success: false, message: 'Unauthorized to access this referral' });
+      }
+    }
     return res.status(200).json({ success: true, data: referral });
   } catch (error) {
     return sendError(res, error, 'Unable to retrieve referral');
@@ -79,6 +87,12 @@ async function getReferralById(req, res) {
 async function getReferrals(req, res) {
   try {
     const query = {};
+    if (req.user && req.user.role === 'HEALTH_WORKER') {
+      query.$or = [
+        { fromHealthCenterId: req.user.healthCenterId },
+        { toHealthCenterId: req.user.healthCenterId }
+      ];
+    }
     if (req.query.status !== undefined) {
       if (!allowedStatuses.includes(req.query.status)) {
         throw badRequest('status must be PENDING, ACCEPTED, COMPLETED, or CANCELLED');
@@ -96,6 +110,12 @@ async function updateReferralStatus(req, res) {
   try {
     const referral = await Referral.findOne({ referralId: req.params.referralId });
     if (!referral) return res.status(404).json({ success: false, message: 'Referral not found' });
+
+    if (req.user && req.user.role === 'HEALTH_WORKER') {
+      if (referral.toHealthCenterId !== req.user.healthCenterId) {
+        return res.status(403).json({ success: false, message: 'Only the destination health centre can update the referral status' });
+      }
+    }
 
     const requestedStatus = req.body?.status;
     if (typeof requestedStatus !== 'string' || !requestedStatus.trim()) {

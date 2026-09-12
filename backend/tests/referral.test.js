@@ -1,5 +1,9 @@
 const request = require('supertest');
 
+jest.mock('../src/middleware/auth.middleware', () => ({
+  authenticate: (req, res, next) => next(),
+  requireRole: () => (req, res, next) => next()
+}));
 const mockReferral = {
   create: jest.fn(),
   deleteOne: jest.fn(),

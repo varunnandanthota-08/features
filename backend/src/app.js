@@ -13,6 +13,7 @@ const smsRoutes = require('./routes/sms.routes');
 const documentRoutes = require('./routes/document.routes');
 const emergencyRoutes = require('./routes/emergency.routes');
 const caseRoutes = require('./routes/case.routes');
+const authRoutes = require('./routes/auth.routes');
 const { startEscalationMonitor, stopEscalationMonitor } = require('./services/escalation.monitor');
 
 const app = express();
@@ -40,6 +41,7 @@ app.use('/api/health-centers', healthCenterRoutes);
 app.use('/api/referrals', referralRoutes);
 app.use('/api/emergency', emergencyRoutes);
 app.use('/api/cases', caseRoutes);
+app.use('/api/auth', authRoutes);
 
 if (process.env.NODE_ENV !== 'production') {
   app.use('/api/test/whatsapp', testWhatsappRoutes);

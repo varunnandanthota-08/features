@@ -41,7 +41,7 @@ async function createCase(req, res) {
 
 async function getActiveCases(req, res) {
   try {
-    return res.status(200).json({ success: true, data: await caseService.getActiveCases() });
+    return res.status(200).json({ success: true, data: await caseService.getActiveCases({ authorizedHealthCenterId: req.user?.healthCenterId }) });
   } catch (error) {
     return sendError(res, error, 'Unable to retrieve active cases');
   }
@@ -49,7 +49,11 @@ async function getActiveCases(req, res) {
 
 async function acknowledgeCase(req, res) {
   try {
-    return res.status(200).json(caseResponse(await caseService.acknowledgeCase(req.params.caseId, req.body || {})));
+    const payload = {
+      healthCenterId: req.user?.healthCenterId,
+      healthWorkerId: req.user?.username
+    };
+    return res.status(200).json(caseResponse(await caseService.acknowledgeCase(req.params.caseId, payload)));
   } catch (error) {
     return sendError(res, error, 'Unable to acknowledge case');
   }
@@ -57,7 +61,7 @@ async function acknowledgeCase(req, res) {
 
 async function resolveCase(req, res) {
   try {
-    return res.status(200).json(caseResponse(await caseService.resolveCase(req.params.caseId)));
+    return res.status(200).json(caseResponse(await caseService.resolveCase(req.params.caseId, { authorizedHealthCenterId: req.user?.healthCenterId })));
   } catch (error) {
     return sendError(res, error, 'Unable to resolve case');
   }
@@ -65,7 +69,7 @@ async function resolveCase(req, res) {
 
 async function escalateCase(req, res) {
   try {
-    return res.status(200).json(caseResponse(await caseService.escalateNormalCase(req.params.caseId)));
+    return res.status(200).json(caseResponse(await caseService.escalateNormalCase(req.params.caseId, new Date(), { authorizedHealthCenterId: req.user?.healthCenterId })));
   } catch (error) {
     return sendError(res, error, 'Unable to escalate case');
   }

@@ -2,6 +2,9 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import AppLayout from './components/AppLayout';
 import CaseDetailsPage from './pages/CaseDetailsPage';
 import HomePage from './pages/HomePage';
+import LoginPage from './pages/LoginPage';
+import ProtectedRoute from './components/ProtectedRoute';
+import { AuthProvider } from './components/AuthContext';
 
 function PlaceholderPage({ title }) {
   return (
@@ -15,15 +18,30 @@ function PlaceholderPage({ title }) {
 
 export default function App() {
   return (
-    <Routes>
-      <Route element={<AppLayout />}>
-        <Route index element={<HomePage />} />
-        <Route path="case-details/:kind/:caseId" element={<CaseDetailsPage />} />
-        <Route path="emergency-alerts" element={<PlaceholderPage title="Emergency alerts" />} />
-        <Route path="cases" element={<PlaceholderPage title="Cases" />} />
-        <Route path="health-centres" element={<PlaceholderPage title="Health centres" />} />
+    <AuthProvider>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        
+        {/* Protected Routes for Health Workers */}
+        <Route element={<ProtectedRoute allowedRoles={['HEALTH_WORKER']} />}>
+          <Route element={<AppLayout />}>
+            <Route index element={<HomePage />} />
+            <Route path="case-details/:kind/:caseId" element={<CaseDetailsPage />} />
+            <Route path="emergency-alerts" element={<PlaceholderPage title="Emergency alerts" />} />
+            <Route path="cases" element={<PlaceholderPage title="Cases" />} />
+            <Route path="health-centres" element={<PlaceholderPage title="Health centres" />} />
+          </Route>
+        </Route>
+
+        {/* Protected Routes for Patients */}
+        <Route element={<ProtectedRoute allowedRoles={['PATIENT']} />}>
+          <Route element={<AppLayout />}>
+            <Route path="patient-portal" element={<PlaceholderPage title="Patient Portal" />} />
+          </Route>
+        </Route>
+
         <Route path="*" element={<Navigate replace to="/" />} />
-      </Route>
-    </Routes>
+      </Routes>
+    </AuthProvider>
   );
 }

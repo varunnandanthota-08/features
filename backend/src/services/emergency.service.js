@@ -150,12 +150,21 @@ async function createEmergencyCase({ patientId, phone, source, reason, location,
   return { emergency, patient, selectedFacility: selected.facility };
 }
 
-async function getEmergencyCase(caseId) {
+async function getEmergencyCase(caseId, { authorizedHealthCenterId } = {}) {
   const emergency = await EmergencyCase.findOne({ caseId });
   if (!emergency) {
     const error = new Error('Emergency case not found');
     error.statusCode = 404;
     throw error;
+  }
+  if (authorizedHealthCenterId) {
+    const hc = await HealthCenter.findOne({ healthCenterId: authorizedHealthCenterId });
+    const isAssigned = hc && (String(emergency.assignedHealthCenterId) === String(hc._id) || String(emergency.referredFacilityId) === String(hc._id) || String(emergency.escalatedToHealthCenterId) === String(hc._id));
+    if (!isAssigned) {
+      const error = new Error('Health centre is not authorized to access this emergency case');
+      error.statusCode = 403;
+      throw error;
+    }
   }
   return emergency;
 }
@@ -169,8 +178,18 @@ async function getPatientLocation({ patientId, phone }) {
   return patient?.location || null;
 }
 
-async function getActiveEmergencies() {
-  const emergencies = await EmergencyCase.find({ status: { $in: activeEmergencyStatuses } })
+async function getActiveEmergencies({ authorizedHealthCenterId } = {}) {
+  const query = { status: { $in: activeEmergencyStatuses } };
+  if (authorizedHealthCenterId) {
+    const hc = await HealthCenter.findOne({ healthCenterId: authorizedHealthCenterId });
+    if (!hc) return [];
+    query.$or = [
+      { assignedHealthCenterId: hc._id },
+      { referredFacilityId: hc._id },
+      { escalatedToHealthCenterId: hc._id }
+    ];
+  }
+  const emergencies = await EmergencyCase.find(query)
     .sort({ priority: -1, createdAt: -1 });
 
   return Promise.all(emergencies.map(async emergency => {
@@ -239,8 +258,8 @@ async function findEscalationTarget(caseRecord) {
   });
 }
 
-async function acknowledgeEmergency(caseId, acknowledgedBy) {
-  const emergency = await getEmergencyCase(caseId);
+async function acknowledgeEmergency(caseId, acknowledgedBy, { authorizedHealthCenterId } = {}) {
+  const emergency = await getEmergencyCase(caseId, { authorizedHealthCenterId });
   if (emergency.status === 'RESOLVED') throw validationError('Resolved emergency cannot be acknowledged');
   if (typeof acknowledgedBy !== 'string' || !acknowledgedBy.trim()) throw validationError('acknowledgedBy is required');
   emergency.status = 'ACKNOWLEDGED';
@@ -253,8 +272,8 @@ async function acknowledgeEmergency(caseId, acknowledgedBy) {
   return emergency;
 }
 
-async function escalateEmergency(caseId) {
-  const emergency = await getEmergencyCase(caseId);
+async function escalateEmergency(caseId, { authorizedHealthCenterId } = {}) {
+  const emergency = await getEmergencyCase(caseId, { authorizedHealthCenterId });
   const result = await escalateCase(emergency, new Date(), { targetSelector: findEscalationTarget });
   const escalationTargetHealthCenter = result.case.escalatedToHealthCenterId
     ? await HealthCenter.findById(result.case.escalatedToHealthCenterId)
@@ -265,8 +284,8 @@ async function escalateEmergency(caseId) {
   };
 }
 
-async function resolveEmergency(caseId) {
-  const emergency = await getEmergencyCase(caseId);
+async function resolveEmergency(caseId, { authorizedHealthCenterId } = {}) {
+  const emergency = await getEmergencyCase(caseId, { authorizedHealthCenterId });
   emergency.status = 'RESOLVED';
   emergency.escalationStatus = ESCALATION_STATUSES.RESOLVED;
   await emergency.save();

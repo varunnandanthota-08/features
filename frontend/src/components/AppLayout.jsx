@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useAuth } from './AuthContext';
 
 const navigation = [
   { label: 'Dashboard', shortLabel: 'DB', to: '/' },
@@ -10,6 +11,19 @@ const navigation = [
 ];
 
 export default function AppLayout() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  const isPatient = user?.role === 'PATIENT';
+  const navItems = isPatient ? [
+    { label: 'Patient Portal', shortLabel: 'PP', to: '/patient-portal' }
+  ] : navigation;
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -23,13 +37,13 @@ export default function AppLayout() {
         <div className="sidebar-context">
           <span className="context-dot" />
           <div>
-            <strong>Field operations</strong>
-            <span>Health worker portal</span>
+            <strong>{isPatient ? 'Patient access' : 'Field operations'}</strong>
+            <span>{isPatient ? 'Patient portal' : 'Health worker portal'}</span>
           </div>
         </div>
         <div className="sidebar-nav-label">Workspace</div>
         <nav className="main-nav" aria-label="Primary navigation">
-          {navigation.map((item) => (
+          {navItems.map((item) => (
             <NavLink
               aria-disabled={item.unavailable ? 'true' : undefined}
               className={({ isActive }) => `nav-link${isActive ? ' active' : ''}${item.unavailable ? ' unavailable' : ''}`}
@@ -45,12 +59,14 @@ export default function AppLayout() {
           ))}
         </nav>
         <div className="sidebar-footer">
-          <div className="user-avatar">HW</div>
+          <div className="user-avatar">{isPatient ? 'PT' : 'HW'}</div>
           <div className="user-copy">
-            <strong>Health worker</strong>
-            <span>Community care team</span>
+            <strong>{user?.username || 'User'}</strong>
+            <span>{isPatient ? 'Patient' : 'Health Worker'}</span>
           </div>
-          <span className="user-menu">•••</span>
+          <button className="user-menu" onClick={handleLogout} title="Logout" style={{background:'none', border:'none', cursor:'pointer', color:'#a0aec0'}}>
+            Logout
+          </button>
         </div>
       </aside>
       <main className="main-content">

@@ -147,6 +147,12 @@ async function updateHealthCenterAvailability(req, res) {
     const healthCenter = await HealthCenter.findOne({ healthCenterId: req.params.healthCenterId });
     if (!healthCenter) return res.status(404).json({ success: false, message: 'Health centre not found' });
 
+    if (req.user && req.user.role === 'HEALTH_WORKER') {
+      if (healthCenter.healthCenterId !== req.user.healthCenterId) {
+        return res.status(403).json({ success: false, message: 'Unauthorized to update availability for this health centre' });
+      }
+    }
+
     const body = req.body || {};
     validateAvailabilityInput(body, healthCenter);
     if (body.doctors) Object.assign(healthCenter.doctors, body.doctors);

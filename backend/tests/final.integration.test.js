@@ -1,4 +1,10 @@
 const request = require('supertest');
+const mongoose = require('mongoose');
+
+jest.mock('../src/middleware/auth.middleware', () => ({
+  authenticate: (req, res, next) => next(),
+  requireRole: () => (req, res, next) => next()
+}));
 
 const mockConversations = new Map();
 const mockPatients = new Map();

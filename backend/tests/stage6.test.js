@@ -1,4 +1,8 @@
 const twilio = require('twilio');
+jest.mock('../src/middleware/auth.middleware', () => ({
+  authenticate: (req, res, next) => next(),
+  requireRole: () => (req, res, next) => next()
+}));
 const { createWhatsAppChatLink } = require('../src/config/whatsapp');
 const {
   createTwilioWebhookValidation,

@@ -1,5 +1,10 @@
 const request = require('supertest');
 
+jest.mock('../src/middleware/auth.middleware', () => ({
+  authenticate: (req, res, next) => next(),
+  requireRole: () => (req, res, next) => next()
+}));
+
 const mockGetActiveEmergencies = jest.fn();
 const mockAcknowledgeEmergency = jest.fn();
 const mockEscalateEmergency = jest.fn();
@@ -81,7 +86,7 @@ describe('emergency dashboard API', () => {
       .send({ acknowledgedBy: 'worker-1' });
 
     expect(response.status).toBe(200);
-    expect(mockAcknowledgeEmergency).toHaveBeenCalledWith('EMG-1', 'worker-1');
+    expect(mockAcknowledgeEmergency).toHaveBeenCalledWith('EMG-1', 'worker-1', { authorizedHealthCenterId: undefined });
     expect(response.body.data.emergency).toMatchObject({
       status: 'ACKNOWLEDGED',
       acknowledgedBy: 'worker-1'
@@ -101,7 +106,7 @@ describe('emergency dashboard API', () => {
     const response = await request(app).post('/api/emergency/EMG-1/escalate');
 
     expect(response.status).toBe(200);
-    expect(mockEscalateEmergency).toHaveBeenCalledWith('EMG-1');
+    expect(mockEscalateEmergency).toHaveBeenCalledWith('EMG-1', { authorizedHealthCenterId: undefined });
     expect(response.body.data.escalation).toMatchObject({
       status: 'ESCALATED',
       level: 1,

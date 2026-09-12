@@ -58,8 +58,18 @@ async function createCase({ patientId, phone, source, complaint, location } = {}
   return { case: record, patient, selectedFacility: selected.facility };
 }
 
-async function getActiveCases({ caseModel = Case } = {}) {
-  const records = await caseModel.find({ status: { $in: activeCaseStatuses } }).sort({ createdAt: -1 });
+async function getActiveCases({ caseModel = Case, authorizedHealthCenterId } = {}) {
+  const query = { status: { $in: activeCaseStatuses } };
+  if (authorizedHealthCenterId) {
+    const hc = await HealthCenter.findOne({ healthCenterId: authorizedHealthCenterId });
+    if (!hc) return [];
+    query.$or = [
+      { assignedHealthCenterId: hc._id },
+      { escalatedToHealthCenterId: hc._id },
+      { sourceHealthCenterId: hc._id }
+    ];
+  }
+  const records = await caseModel.find(query).sort({ createdAt: -1 });
   return Promise.all(records.map(async record => {
     const plain = typeof record.toObject === 'function' ? record.toObject() : record;
     const [patient, assignedHealthCenter, escalationTargetHealthCenter] = await Promise.all([
@@ -114,8 +124,17 @@ async function acknowledgeCase(caseId, { healthCenterId, healthWorkerId } = {}) 
   return record;
 }
 
-async function resolveCase(caseId) {
+async function resolveCase(caseId, { authorizedHealthCenterId } = {}) {
   const record = await getCase(caseId);
+  if (authorizedHealthCenterId) {
+    const hc = await HealthCenter.findOne({ healthCenterId: authorizedHealthCenterId });
+    const expectedId = record.escalationStatus === ESCALATION_STATUSES.ESCALATED
+      ? record.escalatedToHealthCenterId
+      : record.assignedHealthCenterId;
+    if (!hc || !expectedId || String(expectedId) !== String(hc._id)) {
+      throw validationError('Health centre is not authorized to resolve this case', 403);
+    }
+  }
   record.status = 'RESOLVED';
   record.resolvedAt = new Date();
   record.escalationStatus = ESCALATION_STATUSES.RESOLVED;
@@ -127,8 +146,17 @@ async function findEscalationTarget(record) {
   return findSuitableHealthCenter({ location: record.location, excludeHealthCenterId: record.assignedHealthCenterId });
 }
 
-async function escalateNormalCase(caseId, now = new Date()) {
+async function escalateNormalCase(caseId, now = new Date(), { authorizedHealthCenterId } = {}) {
   const record = await getCase(caseId);
+  if (authorizedHealthCenterId) {
+    const hc = await HealthCenter.findOne({ healthCenterId: authorizedHealthCenterId });
+    const expectedId = record.escalationStatus === ESCALATION_STATUSES.ESCALATED
+      ? record.escalatedToHealthCenterId
+      : record.assignedHealthCenterId;
+    if (!hc || !expectedId || String(expectedId) !== String(hc._id)) {
+      throw validationError('Health centre is not authorized to escalate this case', 403);
+    }
+  }
   const result = await escalateCase(record, now, { targetSelector: findEscalationTarget });
   return result.case;
 }
