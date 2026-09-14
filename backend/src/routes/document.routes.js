@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
-const { extractDocument, verifyDocument } = require('../controllers/document.controller');
+const { extractDocument, verifyDocument, getDocuments } = require('../controllers/document.controller');
+const { authenticate } = require('../middleware/auth.middleware');
 
 const allowedMimeTypes = new Set([
   'image/jpeg',
@@ -33,6 +34,7 @@ function handleUpload(req, res, next) {
 }
 
 const router = express.Router();
+router.get('/', authenticate, getDocuments);
 router.post('/extract', handleUpload, extractDocument);
 router.post('/verify', verifyDocument);
 

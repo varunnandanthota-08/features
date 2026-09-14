@@ -1,5 +1,5 @@
 const ESCALATION_SLA_MINUTES = Object.freeze({
-  EMERGENCY: Number(process.env.EMERGENCY_ESCALATION_SLA_MINUTES) || 2,
+  EMERGENCY: Number(process.env.EMERGENCY_ESCALATION_SLA_MINUTES) || 5,
   NORMAL: Number(process.env.NORMAL_ESCALATION_SLA_MINUTES) || 30
 });
 
@@ -23,19 +23,47 @@ function acknowledgementDate(caseRecord) {
 function shouldEscalate(caseRecord, now = new Date()) {
   const currentTime = new Date(now);
   const createdAt = new Date(caseRecord?.createdAt);
-  const slaMinutes = ESCALATION_SLA_MINUTES[caseCategory(caseRecord)];
-  const alreadyEscalated = Number(caseRecord?.escalationLevel || 0) > 0
-    || caseRecord?.escalationStatus === ESCALATION_STATUSES.ESCALATED
-    || caseRecord?.escalationStatus === ESCALATION_STATUSES.ACKNOWLEDGED_AFTER_ESCALATION;
+  const category = caseCategory(caseRecord);
+  const isEmergency = category === 'EMERGENCY';
+  const slaMinutes = ESCALATION_SLA_MINUTES[category];
+
   const acknowledged = Boolean(acknowledgementDate(caseRecord))
     || ['ACKNOWLEDGED', 'RESPONDING'].includes(caseRecord?.status);
   const referred = caseRecord?.status === 'REFERRED';
   const resolved = caseRecord?.status === 'RESOLVED'
     || caseRecord?.escalationStatus === ESCALATION_STATUSES.RESOLVED;
+
+  let overdue = false;
+  if (caseRecord?.emergencyEscalationDueAt) {
+    overdue = currentTime.getTime() >= new Date(caseRecord.emergencyEscalationDueAt).getTime();
+  } else if (isEmergency) {
+    if (caseRecord?.escalatedAt) {
+      overdue = (currentTime.getTime() - new Date(caseRecord.escalatedAt).getTime()) / 60000 >= slaMinutes;
+    } else if (Number(caseRecord?.escalationLevel || 0) > 0) {
+      overdue = false;
+    } else {
+      const elapsedMinutes = Number.isFinite(createdAt.getTime())
+        ? (currentTime.getTime() - createdAt.getTime()) / 60000
+        : 0;
+      overdue = elapsedMinutes >= slaMinutes;
+    }
+  } else {
+    const elapsedMinutes = Number.isFinite(createdAt.getTime())
+      ? (currentTime.getTime() - createdAt.getTime()) / 60000
+      : 0;
+    overdue = elapsedMinutes >= slaMinutes;
+  }
+
+  const alreadyEscalated = isEmergency
+    ? (caseRecord?.escalationStatus === ESCALATION_STATUSES.ACKNOWLEDGED_AFTER_ESCALATION
+       || (!caseRecord?.emergencyEscalationDueAt && Number(caseRecord?.escalationLevel || 0) > 0 && !overdue))
+    : (Number(caseRecord?.escalationLevel || 0) > 0
+       || caseRecord?.escalationStatus === ESCALATION_STATUSES.ESCALATED
+       || caseRecord?.escalationStatus === ESCALATION_STATUSES.ACKNOWLEDGED_AFTER_ESCALATION);
+
   const elapsedMinutes = Number.isFinite(createdAt.getTime())
     ? (currentTime.getTime() - createdAt.getTime()) / 60000
     : 0;
-  const overdue = elapsedMinutes >= slaMinutes;
 
   return {
     shouldEscalate: !alreadyEscalated && !acknowledged && !referred && !resolved && overdue,
@@ -44,7 +72,7 @@ function shouldEscalate(caseRecord, now = new Date()) {
     referred,
     resolved,
     overdue,
-    category: caseCategory(caseRecord),
+    category,
     slaMinutes,
     elapsedMinutes,
     reason: overdue ? 'No acknowledgement within SLA' : 'SLA not exceeded'
@@ -70,10 +98,11 @@ async function escalateCase(caseRecord, now = new Date(), { targetSelector = nul
   const target = targetSelector ? await targetSelector(caseRecord) : null;
   const targetHealthCenter = target?.healthCenter || null;
   const escalatedAt = new Date(now);
+  const reason = decision.reason;
   const historyEntry = {
     level: (caseRecord.escalationLevel || 0) + 1,
     status: ESCALATION_STATUSES.ESCALATED,
-    reason: decision.reason,
+    reason,
     escalatedAt,
     escalatedFromHealthCenterId: caseRecord.assignedHealthCenterId || null,
     escalatedToHealthCenterId: targetHealthCenter?._id || null,
@@ -82,12 +111,25 @@ async function escalateCase(caseRecord, now = new Date(), { targetSelector = nul
   caseRecord.escalationStatus = ESCALATION_STATUSES.ESCALATED;
   caseRecord.escalationLevel = historyEntry.level;
   caseRecord.escalatedAt = escalatedAt;
-  caseRecord.escalationReason = decision.reason;
+  caseRecord.escalationReason = reason;
   caseRecord.escalatedFromHealthCenterId = historyEntry.escalatedFromHealthCenterId;
   caseRecord.escalatedToHealthCenterId = targetHealthCenter?._id || null;
   caseRecord.escalatedToHealthWorkerId = null;
   caseRecord.escalationHistory = [...(caseRecord.escalationHistory || []), historyEntry];
+  if (caseRecord.type === 'EMERGENCY' || caseRecord.priority === 'CRITICAL') {
+    caseRecord.status = 'ESCALATED';
+    if (targetHealthCenter) {
+      caseRecord.assignedHealthCenterId = targetHealthCenter._id;
+      caseRecord.referredFacilityId = targetHealthCenter._id;
+      caseRecord.assignmentStatus = 'ASSIGNED';
+      caseRecord.emergencyEscalationDueAt = new Date(escalatedAt.getTime() + (Number(process.env.EMERGENCY_ESCALATION_SLA_MINUTES) || 5) * 60 * 1000);
+    } else {
+      caseRecord.assignmentStatus = 'ASSIGNMENT_PENDING';
+      caseRecord.emergencyEscalationDueAt = null;
+    }
+  }
   await caseRecord.save();
+
 
   return {
     case: caseRecord,

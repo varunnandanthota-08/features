@@ -79,7 +79,8 @@ describe('local WhatsApp simulator', () => {
   test('processes the full flow and uses the existing patient service', async () => {
     const flow = [
       ['Hi', 'SIM1'], ['3', 'SIM2'], ['Ravi Kumar', 'SIM3'], ['52', 'SIM4'],
-      ['1', 'SIM5'], ['Village A', 'SIM6'], ['I have fever for three days.', 'SIM7']
+      ['1', 'SIM5'], ['Village A', 'SIM6'], ['I have fever for three days.', 'SIM7'],
+      ['2', 'SIM8'], ['2', 'SIM9'], ['5', 'SIM10'], ['2', 'SIM11'], ['1', 'SIM12']
     ];
 
     let response;
@@ -91,7 +92,7 @@ describe('local WhatsApp simulator', () => {
     }
 
     expect(response.body.state).toBe('COMPLETED');
-    expect(response.body.reply).toContain('successfully collected');
+    expect(response.body.reply).toContain('registered');
     expect(mockCreateOrUpdatePatient).toHaveBeenCalledWith(expect.objectContaining({
       phone: '+919876543210', name: 'Ravi Kumar', age: 52, gender: 'male',
       village: 'Village A', language: 'en', symptomsDescription: 'I have fever for three days.'

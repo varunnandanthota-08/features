@@ -85,7 +85,12 @@ describe('final WhatsApp registration flow', () => {
       ['52', 'SM204'],
       ['1', 'SM205'],
       ['Village A', 'SM206'],
-      ['I have fever for three days.', 'SM207']
+      ['I have fever for three days.', 'SM207'],
+      ['2', 'SM208'],
+      ['2', 'SM209'],
+      ['5', 'SM210'],
+      ['2', 'SM211'],
+      ['1', 'SM212']
     ];
 
     for (const [body, messageId] of messages) {
@@ -111,7 +116,7 @@ describe('final WhatsApp registration flow', () => {
     });
     expect(patient).not.toHaveProperty('state');
     expect(patient).not.toHaveProperty('processedMessageIds');
-    expect(sendMessage).toHaveBeenCalledTimes(7);
+    expect(sendMessage).toHaveBeenCalledTimes(12);
   });
 
   test('does not process a duplicate completion MessageSid twice', async () => {
@@ -122,13 +127,18 @@ describe('final WhatsApp registration flow', () => {
       ['52', 'SM304'],
       ['1', 'SM305'],
       ['Village A', 'SM306'],
-      ['I have fever for three days.', 'SM307']
+      ['I have fever for three days.', 'SM307'],
+      ['2', 'SM308'],
+      ['2', 'SM309'],
+      ['5', 'SM310'],
+      ['2', 'SM311'],
+      ['1', 'SM312']
     ]) {
       await send(body, messageId);
     }
 
     const firstResponseCount = sendMessage.mock.calls.length;
-    const duplicateResponse = await send('I have fever for three days.', 'SM307');
+    const duplicateResponse = await send('1', 'SM312');
 
     expect(duplicateResponse.status).toBe(200);
     expect(duplicateResponse.body.duplicate).toBe(true);

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const HealthCenter = require('../models/HealthCenter');
 const { geocodeLocation } = require('../services/geocoding.service');
 
@@ -134,11 +135,49 @@ async function geocodeHealthCenterLocation(req, res) {
 
 async function getHealthCenterById(req, res) {
   try {
-    const healthCenter = await HealthCenter.findOne({ healthCenterId: req.params.healthCenterId });
+    const rawId = req.params.healthCenterId;
+    if (!rawId || rawId === 'undefined') {
+      return res.status(400).json({ success: false, message: 'Invalid health centre identifier' });
+    }
+    const trimmedId = String(rawId).trim();
+    let healthCenter = await HealthCenter.findOne({ healthCenterId: trimmedId });
+    if (!healthCenter && mongoose.isValidObjectId(trimmedId)) {
+      healthCenter = await HealthCenter.findById(trimmedId);
+    }
+    if (!healthCenter) {
+      healthCenter = await HealthCenter.findOne({
+        healthCenterId: { $regex: new RegExp(`^${trimmedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+      });
+    }
     if (!healthCenter) return res.status(404).json({ success: false, message: 'Health centre not found' });
     return res.status(200).json({ success: true, data: healthCenter });
   } catch (error) {
     return sendError(res, error, 'Unable to retrieve health centre');
+  }
+}
+
+async function getOverviewStats(req, res) {
+  try {
+    const Case = require('../models/Case');
+    const Referral = require('../models/Referral');
+    const EmergencyCase = require('../models/EmergencyCase');
+    const [totalCases, totalReferrals, totalEmergencies, totalHealthCenters] = await Promise.all([
+      Case.countDocuments(),
+      Referral.countDocuments(),
+      EmergencyCase.countDocuments(),
+      HealthCenter.countDocuments()
+    ]);
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalCases,
+        totalReferrals,
+        totalEmergencies,
+        totalHealthCenters
+      }
+    });
+  } catch (error) {
+    return sendError(res, error, 'Unable to retrieve platform statistics');
   }
 }
 
@@ -204,13 +243,21 @@ function parseRecommendationQuery(query) {
     longitude: query.longitude,
     radius: 10
   });
+  const rawExclude = query.exclude || query.excludeHealthCenterId;
+  const excludeList = rawExclude
+    ? (Array.isArray(rawExclude) ? rawExclude : String(rawExclude).split(','))
+        .map(s => s.trim())
+        .filter(Boolean)
+    : [];
+
   const requirements = {
     latitude,
     longitude,
     service: query.service?.trim().toUpperCase() || null,
     equipment: query.equipment?.trim().toLowerCase() || null,
     emergency: query.emergency === undefined ? false : query.emergency.toLowerCase() === 'true',
-    maxDistance: query.maxDistance === undefined ? null : Number(query.maxDistance)
+    maxDistance: query.maxDistance === undefined ? null : Number(query.maxDistance),
+    exclude: excludeList
   };
 
   if (query.emergency !== undefined && !['true', 'false'].includes(query.emergency.toLowerCase())) {
@@ -246,7 +293,7 @@ function hasRequiredDoctor(healthCenter, service) {
 function calculateFacilityScore(healthCenter, requirements, distanceKm) {
   const availableCapacity = healthCenter.capacity - (healthCenter.currentPatientLoad || 0);
   const capacityScore = Math.min(10, (availableCapacity / healthCenter.capacity) * 10);
-  const distanceLimit = requirements.maxDistance || 10;
+  const distanceLimit = requirements.maxDistance || 50;
   const distanceScore = Math.max(0, 10 - (distanceKm / distanceLimit) * 10);
 
   // Requirements are filtered first; these weights make the ranking transparent and deterministic.
@@ -278,6 +325,12 @@ async function recommendHealthCenters(req, res) {
       .filter(healthCenter => {
         const availableCapacity = healthCenter.capacity - (healthCenter.currentPatientLoad || 0);
         if (availableCapacity <= 0 || !healthCenter.location) return false;
+        if (requirements.exclude && requirements.exclude.length > 0) {
+          if (requirements.exclude.includes(String(healthCenter.healthCenterId))
+            || requirements.exclude.includes(String(healthCenter._id))) {
+            return false;
+          }
+        }
         if (requirements.service && (!hasService(healthCenter, requirements.service)
           || !hasRequiredDoctor(healthCenter, requirements.service))) return false;
         if (requirements.equipment && healthCenter.equipment?.[requirements.equipment] !== true) return false;
@@ -403,5 +456,6 @@ module.exports = {
   searchHealthCenters,
   getNearbyHealthCenters,
   recommendHealthCenters,
-  calculateFacilityScore
+  calculateFacilityScore,
+  getOverviewStats
 };

@@ -89,7 +89,12 @@ async function processSequence() {
   await processMessage(message('52', 'SM4'));
   await processMessage(message('1', 'SM5'));
   await processMessage(message('Village A', 'SM6'));
-  return processMessage(message('I have fever for three days.', 'SM7'));
+  await processMessage(message('I have fever for three days.', 'SM7'));
+  await processMessage(message('2', 'SM8'));
+  await processMessage(message('2', 'SM9'));
+  await processMessage(message('5', 'SM10'));
+  await processMessage(message('2', 'SM11'));
+  return processMessage(message('1', 'SM12'));
 }
 
 describe('conversation service', () => {
@@ -244,7 +249,7 @@ describe('conversation service', () => {
     expect(result.conversation.data.gender).toBe('male');
     expect(result.conversation.data.village).toBe('Village A');
     expect(result.conversation.data.symptomsDescription).toBe('I have fever for three days.');
-    expect(result.conversation.state).toBe(CONVERSATION_STATES.COMPLETED);
+    expect(result.conversation.state).toBe(CONVERSATION_STATES.COLLECT_DURATION);
   });
 
   test('does not process the same MessageSid twice', async () => {
@@ -303,13 +308,18 @@ describe('conversation service', () => {
     await processMessage(message('52', 'SM4'));
     await processMessage(message('1', 'SM5'));
     await processMessage(message('Village A', 'SM6'));
-    const result = await processMessage(message('I have fever', 'SM7'));
+    await processMessage(message('I have fever', 'SM7'));
+    await processMessage(message('2', 'SM8'));
+    await processMessage(message('2', 'SM9'));
+    await processMessage(message('5', 'SM10'));
+    await processMessage(message('2', 'SM11'));
+    const result = await processMessage(message('1', 'SM12'));
     const savedConversation = await Conversation.findOne({ phone: '+919876543210', channel: 'WHATSAPP' });
 
     expect(result.persistenceFailed).toBe(true);
     expect(result.response).toContain('could not complete your registration');
-    expect(savedConversation.state).toBe(CONVERSATION_STATES.COLLECT_SYMPTOMS);
+    expect(savedConversation.state).toBe(CONVERSATION_STATES.CONFIRM);
     expect(savedConversation.data.symptomsDescription).toBe('I have fever');
-    expect(savedConversation.processedMessageIds).not.toContain('SM7');
+    expect(savedConversation.processedMessageIds).not.toContain('SM12');
   });
 });

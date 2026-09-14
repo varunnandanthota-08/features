@@ -22,11 +22,11 @@ function emergency(overrides = {}) {
 }
 
 describe('shared escalation service', () => {
-  const afterEmergencySla = new Date('2026-09-10T10:02:01.000Z');
-  const beforeEmergencySla = new Date('2026-09-10T10:01:59.000Z');
+  const afterEmergencySla = new Date('2026-09-10T10:05:01.000Z');
+  const beforeEmergencySla = new Date('2026-09-10T10:04:59.000Z');
 
   test('uses centralized configurable SLA values', () => {
-    expect(ESCALATION_SLA_MINUTES).toMatchObject({ EMERGENCY: 2, NORMAL: 30 });
+    expect(ESCALATION_SLA_MINUTES).toMatchObject({ EMERGENCY: 5, NORMAL: 30 });
   });
 
   test('does not escalate an emergency under SLA', () => {

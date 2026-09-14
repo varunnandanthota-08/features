@@ -150,6 +150,9 @@ describe('SMS webhook', () => {
     const gender = await send('1');
     const location = await send('Village A');
     const symptoms = await send('Fever for three days');
+    const duration = await send('2');
+    const severity = await send('2');
+    const screen = await send('5');
 
     expect(language.body.state).toBe('COLLECT_NAME');
     expect(name.body.state).toBe('COLLECT_AGE');
@@ -160,13 +163,16 @@ describe('SMS webhook', () => {
     expect(age.body.reply).not.toContain('Prefer');
     expect(gender.body.state).toBe('COLLECT_LOCATION');
     expect(location.body.state).toBe('COLLECT_SYMPTOMS');
-    expect(symptoms.body.state).toBe('CONFIRM');
-    expect(symptoms.body.reply).toContain('Reply 1 to confirm');
+    expect(symptoms.body.state).toBe('COLLECT_DURATION');
+    expect(duration.body.state).toBe('COLLECT_SEVERITY');
+    expect(severity.body.state).toBe('EMERGENCY_SCREENING');
+    expect(screen.body.state).toBe('CONFIRM');
+    expect(screen.body.reply).toContain('confirm');
     expect(mockCreateOrUpdatePatient).not.toHaveBeenCalled();
   });
 
   test('confirms and creates the patient through the existing patient service', async () => {
-    for (const body of ['HI', '3', 'Ravi Kumar', '52', '1', 'Village A', 'Fever']) {
+    for (const body of ['HI', '3', 'Ravi Kumar', '52', '1', 'Village A', 'Fever', '2', '2', '5']) {
       await send(body);
     }
 
@@ -257,14 +263,14 @@ describe('SMS webhook', () => {
   });
 
   test('keeps confirmation open for invalid input', async () => {
-    for (const body of ['HI', '3', 'Ravi Kumar', '52', '1', 'Village A', 'Fever']) {
+    for (const body of ['HI', '3', 'Ravi Kumar', '52', '1', 'Village A', 'Fever', '2', '2', '5']) {
       await send(body);
     }
 
     const response = await send('maybe');
 
     expect(response.body.state).toBe('CONFIRM');
-    expect(response.body.reply).toContain('reply 1 to confirm');
+    expect(response.body.reply).toContain('confirm');
     expect(mockCreateOrUpdatePatient).not.toHaveBeenCalled();
   });
 
@@ -276,7 +282,10 @@ describe('SMS webhook', () => {
       ['52', 'SMS-4'],
       ['1', 'SMS-5'],
       ['Village A', 'SMS-6'],
-      ['Fever for 3 days', 'SMS-7']
+      ['Fever for 3 days', 'SMS-7'],
+      ['2', 'SMS-8'],
+      ['2', 'SMS-9'],
+      ['5', 'SMS-10']
     ];
     const expectedStates = [
       'SELECT_LANGUAGE',
@@ -285,6 +294,9 @@ describe('SMS webhook', () => {
       'COLLECT_GENDER',
       'COLLECT_LOCATION',
       'COLLECT_SYMPTOMS',
+      'COLLECT_DURATION',
+      'COLLECT_SEVERITY',
+      'EMERGENCY_SCREENING',
       'CONFIRM'
     ];
 
@@ -303,10 +315,13 @@ describe('SMS webhook', () => {
       age: 52,
       gender: 'male',
       village: 'Village A',
-      symptomsDescription: 'Fever for 3 days'
+      symptomsDescription: 'Fever for 3 days',
+      duration: '1 to 3 days',
+      severity: 'Moderate',
+      isEmergency: false
     });
 
-    const confirmation = await send('1', 'SMS-8');
+    const confirmation = await send('1', 'SMS-11');
     expect(confirmation.body.state).toBe('COMPLETED');
     expect(confirmation.body.reply).toBeTruthy();
     expect(conversation.state).toBe('COMPLETED');
@@ -321,7 +336,7 @@ describe('SMS webhook', () => {
       source: 'SMS'
     });
 
-    const duplicate = await send('1', 'SMS-8');
+    const duplicate = await send('1', 'SMS-11');
     expect(duplicate.body.duplicate).toBe(true);
     expect(duplicate.body.reply).toBeNull();
     expect(mockCreateOrUpdatePatient).toHaveBeenCalledTimes(1);

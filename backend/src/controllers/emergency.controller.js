@@ -50,7 +50,16 @@ async function createEmergency(req, res) {
 
 async function acknowledgeEmergency(req, res) {
   try {
-    const emergency = await emergencyService.acknowledgeEmergency(req.params.caseId, req.user?.username || req.body?.acknowledgedBy, { authorizedHealthCenterId: req.user?.healthCenterId });
+    const workerName = req.user?.name || req.user?.username || req.body?.acknowledgedBy || 'Health Worker';
+    const options = { authorizedHealthCenterId: req.user?.healthCenterId };
+    if (req.user?.username || req.user?.name || req.body?.workerId) {
+      options.workerId = req.user?.username || req.user?.name || req.body?.workerId;
+    }
+    const emergency = await emergencyService.acknowledgeEmergency(
+      req.params.caseId,
+      workerName,
+      options
+    );
     return res.status(200).json(emergencyResponse(emergency, null, null));
   } catch (error) {
     return sendError(res, error, 'Unable to acknowledge emergency case');

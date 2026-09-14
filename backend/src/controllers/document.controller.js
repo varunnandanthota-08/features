@@ -3,7 +3,7 @@ const Document = require('../models/Document');
 const { extractDocumentData } = require('../services/gemini.service');
 const { verifyDocument: verifyDocumentService } = require('../services/document.service');
 
-const documentTypes = new Set(['PATIENT_REGISTRATION', 'MEDICAL_REPORT']);
+const documentTypes = new Set(['PATIENT_REGISTRATION', 'MEDICAL_REPORT', 'PRESCRIPTION', 'LAB_REPORT', 'PATIENT_DOCUMENT']);
 
 function badRequest(message) {
   const error = new Error(message);
@@ -108,4 +108,14 @@ async function verifyDocument(req, res) {
   }
 }
 
-module.exports = { extractDocument, verifyDocument };
+async function getDocuments(req, res) {
+  try {
+    const documents = await Document.find().populate('patientId').sort({ createdAt: -1 });
+    return res.status(200).json({ success: true, data: documents });
+  } catch (error) {
+    console.error('[Document] List failed:', error.message);
+    return res.status(500).json({ success: false, message: 'Unable to retrieve documents' });
+  }
+}
+
+module.exports = { extractDocument, verifyDocument, getDocuments };

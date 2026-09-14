@@ -14,14 +14,16 @@ const documentRoutes = require('./routes/document.routes');
 const emergencyRoutes = require('./routes/emergency.routes');
 const caseRoutes = require('./routes/case.routes');
 const authRoutes = require('./routes/auth.routes');
+const patientRoutes = require('./routes/patient.routes');
 const { startEscalationMonitor, stopEscalationMonitor } = require('./services/escalation.monitor');
 
 const app = express();
 const port = Number(process.env.PORT) || 5000;
 
 app.use(cors({
-  origin: 'http://localhost:5173',
-  methods: ['GET', 'POST', 'PATCH', 'OPTIONS']
+  origin: true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -42,6 +44,7 @@ app.use('/api/referrals', referralRoutes);
 app.use('/api/emergency', emergencyRoutes);
 app.use('/api/cases', caseRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/patients', patientRoutes);
 
 if (process.env.NODE_ENV !== 'production') {
   app.use('/api/test/whatsapp', testWhatsappRoutes);

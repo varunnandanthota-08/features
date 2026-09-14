@@ -6,6 +6,7 @@ const { createOrUpdatePatient } = require('./patient.service');
 const { createEmergencyCase, getPatientLocation } = require('./emergency.service');
 const { geocodeLocation } = require('./geocoding.service');
 const { createCase } = require('./case.service');
+const { finalizeRegistrationAndCase, checkExistingPatient } = require('./registration.service');
 const { languageForMenuOption } = require('../constants/channelMenu');
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -92,7 +93,9 @@ function getPromptForState(state, language = 'en', data = {}) {
     [CONVERSATION_STATES.IVR_COLLECT_GENDER]: prompt.gender,
     [CONVERSATION_STATES.IVR_COLLECT_LOCATION]: prompt.location,
     [CONVERSATION_STATES.IVR_COLLECT_SYMPTOMS]: prompt.symptoms,
-    [CONVERSATION_STATES.IVR_EMERGENCY_LOCATION_CONFIRM]: prompt.emergencyLocationConfirm(data.emergencyLocationLabel || 'the selected location'),
+    [CONVERSATION_STATES.IVR_EMERGENCY_LOCATION_CONFIRM]: typeof prompt.emergencyLocationConfirm === 'function'
+      ? prompt.emergencyLocationConfirm(data.emergencyLocationLabel || 'the selected location')
+      : prompts.en.emergencyLocationConfirm(data.emergencyLocationLabel || 'the selected location'),
     [CONVERSATION_STATES.IVR_CONFIRM]: prompt.confirm(data),
     [CONVERSATION_STATES.IVR_COMPLETED]: prompt.complete
   }[state] || '';
@@ -328,6 +331,19 @@ async function handleLanguage(req) {
     const language = languageForMenuOption(input.digits);
     if (!language) return { twiml: twimlForLanguage() };
     session.language = language;
+
+    const existingPatient = await checkExistingPatient(session.phone);
+    if (existingPatient && existingPatient.name && existingPatient.location?.village) {
+      session.data.name = existingPatient.name;
+      session.data.age = existingPatient.age;
+      session.data.gender = existingPatient.gender;
+      session.data.village = existingPatient.location.village;
+      session.data.isExistingPatient = true;
+      session.data.patientId = existingPatient._id;
+      session.state = CONVERSATION_STATES.IVR_COLLECT_SYMPTOMS;
+      return { twiml: twimlForState(session.state, language, session.data) };
+    }
+
     session.state = CONVERSATION_STATES.IVR_COLLECT_NAME;
     return { twiml: twimlForState(session.state, language, session.data) };
   });
@@ -471,24 +487,12 @@ async function handleConfirm(req) {
     if (!session.language || required.some(field => !session.data[field])) {
       return { twiml: getFailureTwiml() };
     }
-    const patient = await createOrUpdatePatient({
+    await finalizeRegistrationAndCase({
       phone: session.phone,
-      name: session.data.name,
-      age: session.data.age,
-      gender: session.data.gender,
-      village: session.data.village,
+      channel: 'PHONE_IVR',
       language: session.language,
-      symptomsDescription: session.data.symptomsDescription,
-      source: 'IVR'
+      data: session.data
     });
-    if (patient?._id) {
-      await createCase({
-        patientId: patient._id,
-        source: 'PHONE_IVR',
-        complaint: session.data.symptomsDescription,
-        location: patient.location
-      });
-    }
     session.state = CONVERSATION_STATES.IVR_COMPLETED;
     const response = new VoiceResponse();
     say(response, prompts[session.language].complete, session.language);

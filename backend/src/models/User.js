@@ -25,6 +25,22 @@ const userSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Patient',
     default: null
+  },
+  name: {
+    type: String,
+    default: null,
+    trim: true
+  },
+  email: {
+    type: String,
+    default: null,
+    trim: true,
+    lowercase: true
+  },
+  phone: {
+    type: String,
+    default: null,
+    trim: true
   }
 }, { timestamps: true });
 
@@ -32,9 +48,8 @@ userSchema.pre('save', function (next) {
   if (this.role === 'HEALTH_WORKER' && !this.healthCenterId) {
     return next(new Error('HEALTH_WORKER must be associated with a healthCenterId'));
   }
-  if (this.role === 'PATIENT' && !this.patientId) {
-    return next(new Error('PATIENT must be associated with a patientId'));
-  }
+  // PATIENT role does NOT require a patientId immediately on signup. 
+  // It is linked later during the health profile / case intake flow.
   next();
 });
 

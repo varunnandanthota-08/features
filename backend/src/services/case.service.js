@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const Case = require('../models/Case');
 const Patient = require('../models/Patient');
 const HealthCenter = require('../models/HealthCenter');
+const Referral = require('../models/Referral');
 const { findByPhone } = require('./patient.service');
 const { findSuitableHealthCenter } = require('./emergency.service');
 const { escalateCase, ESCALATION_STATUSES } = require('./escalation.service');
@@ -16,13 +17,41 @@ function validationError(message, statusCode = 400) {
   return error;
 }
 
-async function resolvePatient({ patientId, phone }) {
+async function resolvePatient({ patientId, phone, patientData } = {}) {
   if (patientId) {
     if (!mongoose.Types.ObjectId.isValid(patientId)) throw validationError('patientId must be a valid identifier');
-    return Patient.findById(patientId);
+    const existing = await Patient.findById(patientId);
+    if (existing) return existing;
   }
-  if (typeof phone !== 'string' || !phone.trim()) throw validationError('patientId or phone is required');
-  return findByPhone(phone.trim());
+  const phoneToUse = typeof phone === 'string' && phone.trim() ? phone.trim() : (patientData?.phone ? String(patientData.phone).trim() : '');
+  if (phoneToUse) {
+    let patient = await findByPhone(phoneToUse);
+    if (!patient && patientData) {
+      patient = await Patient.create({
+        phone: phoneToUse,
+        name: patientData.name || null,
+        age: patientData.age ? Number(patientData.age) : null,
+        gender: patientData.gender || null,
+        location: { village: patientData.village || null },
+        language: patientData.language || 'en',
+        source: 'DASHBOARD'
+      });
+    }
+    return patient;
+  }
+  if (patientData && patientData.name) {
+    const tempPhone = `+919${Math.floor(100000000 + Math.random() * 900000000)}`;
+    return Patient.create({
+      phone: tempPhone,
+      name: patientData.name,
+      age: patientData.age ? Number(patientData.age) : null,
+      gender: patientData.gender || null,
+      location: { village: patientData.village || null },
+      language: patientData.language || 'en',
+      source: 'DASHBOARD'
+    });
+  }
+  throw validationError('patientId or phone is required');
 }
 
 function realLocation(location) {
@@ -34,16 +63,37 @@ function realLocation(location) {
     : {};
 }
 
-async function createCase({ patientId, phone, source, complaint, location } = {}) {
+async function createCase({ patientId, phone, source, complaint, location, patientData } = {}) {
   if (!caseSources.has(source)) throw validationError('source is invalid');
   if (typeof complaint !== 'string' || !complaint.trim()) throw validationError('complaint is required');
-  const patient = await resolvePatient({ patientId, phone });
+  const patient = await resolvePatient({ patientId, phone, patientData });
   if (!patient) throw Object.assign(new Error('Patient not found'), { statusCode: 404 });
 
-  const normalizedLocation = realLocation(location || patient.location);
+  let normalizedLocation = realLocation(location || patient.location);
+  const villageText = location?.village || patient.location?.village || patientData?.village || null;
+
+  if (normalizedLocation.latitude === undefined && villageText && source === 'DASHBOARD') {
+    try {
+      const { geocodeLocation } = require('./geocoding.service');
+      const geocoded = await geocodeLocation(villageText);
+      if (geocoded && geocoded.latitude !== undefined && geocoded.longitude !== undefined) {
+        normalizedLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
+        if (patient && (!patient.location?.latitude || !patient.location?.longitude)) {
+          patient.location = {
+            ...(patient.location || {}),
+            village: patient.location?.village || villageText,
+            latitude: geocoded.latitude,
+            longitude: geocoded.longitude
+          };
+          await patient.save();
+        }
+      }
+    } catch (_) {}
+  }
+
   const selected = await findSuitableHealthCenter({
     location: normalizedLocation.latitude === undefined ? undefined : normalizedLocation,
-    village: patient.location?.village
+    village: villageText
   });
   const record = await Case.create({
     caseId: `CASE-${crypto.randomUUID()}`,
@@ -64,10 +114,22 @@ async function getActiveCases({ caseModel = Case, authorizedHealthCenterId } = {
     const hc = await HealthCenter.findOne({ healthCenterId: authorizedHealthCenterId });
     if (!hc) return [];
     query.$or = [
-      { assignedHealthCenterId: hc._id },
-      { escalatedToHealthCenterId: hc._id },
-      { sourceHealthCenterId: hc._id }
+      {
+        assignedHealthCenterId: hc._id,
+        status: { $ne: 'REFERRED' },
+        $or: [
+          { escalationStatus: { $ne: 'ESCALATED' } },
+          { escalatedToHealthCenterId: null },
+          { escalatedToHealthCenterId: hc._id }
+        ]
+      },
+      {
+        escalatedToHealthCenterId: hc._id,
+        escalationStatus: 'ESCALATED'
+      }
     ];
+  } else {
+    return [];
   }
   const records = await caseModel.find(query).sort({ createdAt: -1 });
   return Promise.all(records.map(async record => {
@@ -96,6 +158,56 @@ async function getCase(caseId) {
   const record = await Case.findOne({ caseId });
   if (!record) throw Object.assign(new Error('Case not found'), { statusCode: 404 });
   return record;
+}
+
+async function getCaseDetails(caseId, { authorizedHealthCenterId } = {}) {
+  const record = await Case.findOne({ caseId });
+  if (!record) throw Object.assign(new Error('Case not found'), { statusCode: 404 });
+
+  if (authorizedHealthCenterId) {
+    const hc = await HealthCenter.findOne({ healthCenterId: authorizedHealthCenterId });
+    if (!hc) throw Object.assign(new Error('Health centre not found'), { statusCode: 404 });
+    const hcIdStr = String(hc._id);
+    const isAssigned = record.assignedHealthCenterId && String(record.assignedHealthCenterId) === hcIdStr;
+    const isSource = record.sourceHealthCenterId && String(record.sourceHealthCenterId) === hcIdStr;
+    const isReferredTo = record.referredToHealthCenterId && String(record.referredToHealthCenterId) === hcIdStr;
+    const isEscalatedTo = record.escalatedToHealthCenterId && String(record.escalatedToHealthCenterId) === hcIdStr;
+    if (!isAssigned && !isSource && !isReferredTo && !isEscalatedTo) {
+      throw Object.assign(new Error('Unauthorized to access this case'), { statusCode: 403 });
+    }
+  }
+
+  const plain = typeof record.toObject === 'function' ? record.toObject() : record;
+  const [patient, assignedHealthCenter, sourceHealthCenter, referredToHealthCenter, escalationTargetHealthCenter, referral] = await Promise.all([
+    Patient.findById(plain.patientId),
+    plain.assignedHealthCenterId ? HealthCenter.findById(plain.assignedHealthCenterId) : null,
+    plain.sourceHealthCenterId ? HealthCenter.findById(plain.sourceHealthCenterId) : null,
+    plain.referredToHealthCenterId ? HealthCenter.findById(plain.referredToHealthCenterId) : null,
+    plain.escalatedToHealthCenterId ? HealthCenter.findById(plain.escalatedToHealthCenterId) : null,
+    plain.referralId ? Referral.findOne({ referralId: plain.referralId }) : null
+  ]);
+
+  const targetSelectionRequired = plain.escalationStatus === 'ESCALATED' && !plain.escalatedToHealthCenterId && !plain.escalatedToHealthWorkerId;
+
+  return {
+    ...plain,
+    kind: 'CASE',
+    patient,
+    assignedHealthCenter,
+    selectedHealthCenter: assignedHealthCenter,
+    sourceHealthCenter,
+    referredToHealthCenter,
+    escalationTargetHealthCenter,
+    referral,
+    escalation: {
+      status: plain.escalationStatus || 'NOT_ESCALATED',
+      level: plain.escalationLevel || 0,
+      reason: plain.escalationReason || null,
+      escalatedAt: plain.escalatedAt || null,
+      targetSelectionRequired,
+      targetMessage: targetSelectionRequired ? 'Escalation required - target selection pending' : null
+    }
+  };
 }
 
 async function acknowledgeCase(caseId, { healthCenterId, healthWorkerId } = {}) {
@@ -161,12 +273,25 @@ async function escalateNormalCase(caseId, now = new Date(), { authorizedHealthCe
   return result.case;
 }
 
+async function getPatientCases(patientId) {
+  if (!patientId) return [];
+  const query = mongoose.Types.ObjectId.isValid(patientId)
+    ? { patientId }
+    : { patientId: null };
+  const records = await Case.find(query)
+    .populate('assignedHealthCenterId')
+    .sort({ createdAt: -1 });
+  return records;
+}
+
 module.exports = {
   Case,
   activeCaseStatuses,
   createCase,
   getActiveCases,
+  getPatientCases,
   getCase,
+  getCaseDetails,
   acknowledgeCase,
   resolveCase,
   escalateNormalCase,

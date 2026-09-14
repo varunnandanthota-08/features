@@ -43,13 +43,12 @@ describe('escalation monitor', () => {
     mockCaseFindOne.mockResolvedValue(null);
   });
 
-  test('queries only assigned, active, unacknowledged, level-zero cases', () => {
+  test('queries assigned, active, unacknowledged emergency cases', () => {
     expect(eligibleEmergencyQuery()).toEqual({
-      status: { $in: ['REGISTERED', 'ALERTED', 'RESPONDING'] },
+      status: { $in: ['REGISTERED', 'ALERTED', 'RESPONDING', 'ESCALATED'] },
       assignedHealthCenterId: { $ne: null },
       acknowledgedAt: null,
-      escalationLevel: 0,
-      escalationStatus: { $nin: ['ESCALATED', 'ACKNOWLEDGED_AFTER_ESCALATION', 'RESOLVED'] }
+      escalationStatus: { $nin: ['ACKNOWLEDGED_AFTER_ESCALATION', 'RESOLVED'] }
     });
   });
 
@@ -125,11 +124,11 @@ describe('escalation monitor', () => {
     expect(referral.save).not.toHaveBeenCalled();
   });
 
-  test('does not repeatedly escalate an already escalated referral', async () => {
+  test('does not escalate an already escalated referral with null due date', async () => {
     const referral = {
       referralId: 'REF-ALREADY-ESCALATED',
       status: 'PENDING',
-      acceptanceDueAt: new Date('2026-09-10T10:00:00.000Z'),
+      acceptanceDueAt: null,
       escalationStatus: 'ESCALATED',
       escalationLevel: 1,
       save: jest.fn()
@@ -169,7 +168,7 @@ describe('escalation monitor', () => {
 
     const escalated = await checkEscalations({
       caseModel,
-      now: new Date('2026-09-10T10:02:01.000Z'),
+      now: new Date('2026-09-10T10:05:01.000Z'),
       logger,
       targetSelector: async () => ({ healthCenter: null, facility: null })
     });
@@ -196,7 +195,7 @@ describe('escalation monitor', () => {
 
     await checkEscalations({
       caseModel,
-      now: new Date('2026-09-10T10:02:01.000Z'),
+      now: new Date('2026-09-10T10:05:01.000Z'),
       targetSelector,
       logger: { log: jest.fn(), error: jest.fn() }
     });
@@ -242,7 +241,7 @@ describe('escalation monitor', () => {
     const caseModel = { find: jest.fn().mockResolvedValue([record]) };
     await expect(checkEscalations({
       caseModel,
-      now: new Date('2026-09-10T10:02:01.000Z'),
+      now: new Date('2026-09-10T10:05:01.000Z'),
       logger: { log: jest.fn(), error: jest.fn() }
     })).resolves.toEqual([]);
     expect(record.save).not.toHaveBeenCalled();

@@ -16,6 +16,7 @@ router.post('/', createEmergency); // Public SOS
 router.post('/:caseId/acknowledge', authenticate, requireRole('HEALTH_WORKER'), acknowledgeEmergency);
 router.post('/:caseId/escalate', authenticate, requireRole('HEALTH_WORKER'), escalateEmergency);
 router.post('/:caseId/resolve', authenticate, requireRole('HEALTH_WORKER'), resolveEmergency);
+router.get('/', authenticate, requireRole('HEALTH_WORKER'), getActiveEmergencies);
 router.get('/active', authenticate, requireRole('HEALTH_WORKER'), getActiveEmergencies);
 router.get('/:caseId', authenticate, requireRole('HEALTH_WORKER'), getEmergency);
 

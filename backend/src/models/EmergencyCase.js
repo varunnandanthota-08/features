@@ -59,6 +59,11 @@ const emergencyCaseSchema = new mongoose.Schema({
     ref: 'HealthCenter',
     default: null
   },
+  sourceHealthCenterId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'HealthCenter',
+    default: null
+  },
   assignmentStatus: {
     type: String,
     enum: ['ASSIGNED', 'PENDING', 'ASSIGNMENT_PENDING'],
@@ -72,9 +77,16 @@ const emergencyCaseSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: ['REGISTERED', 'ALERTED', 'ACKNOWLEDGED', 'RESPONDING', 'REFERRED', 'ESCALATED', 'RESOLVED'],
-    default: 'REGISTERED'
+    default: 'ALERTED'
+  },
+  emergencyEscalationDueAt: {
+    type: Date,
+    default: null,
+    index: true
   },
   acknowledgedBy: { type: String, default: null, trim: true },
+  acknowledgedByWorkerId: { type: String, default: null, trim: true },
+  acknowledgedByHealthCenterId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthCenter', default: null },
   acknowledgedAt: { type: Date, default: null },
   escalationLevel: { type: Number, min: 0, default: 0 },
   escalationStatus: {
@@ -89,6 +101,7 @@ const emergencyCaseSchema = new mongoose.Schema({
   escalatedToHealthWorkerId: { type: String, default: null, trim: true },
   escalationHistory: { type: [escalationHistorySchema], default: [] }
 }, {
+
   timestamps: true
 });
 

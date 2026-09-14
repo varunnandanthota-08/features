@@ -33,6 +33,11 @@ jest.mock('../src/models/HealthCenter', () => ({
   create: jest.fn(),
   findById: jest.fn()
 }));
+jest.mock('../src/models/Document', () => ({
+  find: jest.fn().mockReturnValue({
+    sort: jest.fn().mockResolvedValue([])
+  })
+}));
 
 describe('Authorization & HC Ownership', () => {
   let tokenA, tokenB;
@@ -117,6 +122,70 @@ describe('Authorization & HC Ownership', () => {
         .set('Authorization', `Bearer ${tokenA}`);
 
       expect(res.statusCode).toBe(403);
+    });
+
+    it('HC-A cannot access HC-B case details via GET /api/cases/:caseId', async () => {
+      Case.findOne.mockResolvedValue({
+        caseId: 'CASE-B',
+        assignedHealthCenterId: 'mongo-hc-b',
+        sourceHealthCenterId: 'mongo-hc-b',
+        referredToHealthCenterId: null,
+        escalatedToHealthCenterId: null,
+        status: 'ASSIGNED'
+      });
+
+      const res = await request(app)
+        .get('/api/cases/CASE-B')
+        .set('Authorization', `Bearer ${tokenA}`);
+
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('HC-B can access HC-B case details via GET /api/cases/:caseId', async () => {
+      Case.findOne.mockResolvedValue({
+        caseId: 'CASE-B',
+        assignedHealthCenterId: 'mongo-hc-b',
+        sourceHealthCenterId: 'mongo-hc-b',
+        referredToHealthCenterId: null,
+        escalatedToHealthCenterId: null,
+        status: 'ASSIGNED',
+        toObject: () => ({
+          caseId: 'CASE-B',
+          assignedHealthCenterId: 'mongo-hc-b',
+          status: 'ASSIGNED'
+        })
+      });
+
+      const res = await request(app)
+        .get('/api/cases/CASE-B')
+        .set('Authorization', `Bearer ${tokenB}`);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data.caseId).toBe('CASE-B');
+    });
+
+    it('destination HC can access referred case details via GET /api/cases/:caseId', async () => {
+      Case.findOne.mockResolvedValue({
+        caseId: 'CASE-REF',
+        assignedHealthCenterId: 'mongo-hc-a',
+        sourceHealthCenterId: 'mongo-hc-a',
+        referredToHealthCenterId: 'mongo-hc-b',
+        escalatedToHealthCenterId: null,
+        status: 'REFERRED',
+        toObject: () => ({
+          caseId: 'CASE-REF',
+          assignedHealthCenterId: 'mongo-hc-a',
+          referredToHealthCenterId: 'mongo-hc-b',
+          status: 'REFERRED'
+        })
+      });
+
+      const res = await request(app)
+        .get('/api/cases/CASE-REF')
+        .set('Authorization', `Bearer ${tokenB}`);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data.caseId).toBe('CASE-REF');
     });
   });
 

@@ -49,6 +49,28 @@ async function createReferral(req, res) {
     const body = req.body || {};
     if (req.user && req.user.role === 'HEALTH_WORKER') {
       body.fromHealthCenterId = req.user.healthCenterId; // Prevent spoofing
+    } else if (req.user && req.user.role === 'PATIENT') {
+      const User = require('../models/User');
+      const Patient = require('../models/Patient');
+      const Case = require('../models/Case');
+      const user = await User.findById(req.user.userId);
+      let patientId = user?.patientId;
+      if (!patientId && user?.phone) {
+        const p = await Patient.findOne({ phone: user.phone });
+        patientId = p?._id;
+      }
+      if (!patientId) {
+        return res.status(403).json({ success: false, message: 'Patient profile not found' });
+      }
+      const caseRecord = await Case.findOne({ caseId: body.caseId?.trim() });
+      if (!caseRecord || String(caseRecord.patientId) !== String(patientId)) {
+        return res.status(403).json({ success: false, message: 'Unauthorized to refer this case' });
+      }
+      body.patientId = String(patientId);
+      if (!body.fromHealthCenterId && caseRecord.assignedHealthCenterId) {
+        const assignedHc = await HealthCenter.findById(caseRecord.assignedHealthCenterId);
+        if (assignedHc) body.fromHealthCenterId = assignedHc.healthCenterId;
+      }
     }
     validateCreateInput(body);
 
@@ -77,6 +99,18 @@ async function getReferralById(req, res) {
       if (referral.fromHealthCenterId !== req.user.healthCenterId && referral.toHealthCenterId !== req.user.healthCenterId) {
         return res.status(403).json({ success: false, message: 'Unauthorized to access this referral' });
       }
+    } else if (req.user && req.user.role === 'PATIENT') {
+      const User = require('../models/User');
+      const Patient = require('../models/Patient');
+      const user = await User.findById(req.user.userId);
+      let patientId = user?.patientId;
+      if (!patientId && user?.phone) {
+        const p = await Patient.findOne({ phone: user.phone });
+        patientId = p?._id;
+      }
+      if (!patientId || String(referral.patientId) !== String(patientId)) {
+        return res.status(403).json({ success: false, message: 'Unauthorized to access this referral' });
+      }
     }
     return res.status(200).json({ success: true, data: referral });
   } catch (error) {
@@ -103,6 +137,21 @@ async function getReferrals(req, res) {
     return res.status(200).json({ success: true, data: referrals });
   } catch (error) {
     return sendError(res, error, 'Unable to retrieve referrals');
+  }
+}
+
+async function getPatientReferrals(req, res) {
+  try {
+    const User = require('../models/User');
+    const user = await User.findById(req.user?.userId);
+    const patientId = req.user?.patientId || user?.patientId;
+    if (!patientId) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+    const referrals = await Referral.find({ patientId }).sort({ createdAt: -1 });
+    return res.status(200).json({ success: true, data: referrals });
+  } catch (error) {
+    return sendError(res, error, 'Unable to retrieve patient referrals');
   }
 }
 
@@ -135,4 +184,4 @@ async function updateReferralStatus(req, res) {
   }
 }
 
-module.exports = { createReferral, getReferralById, getReferrals, updateReferralStatus };
+module.exports = { createReferral, getReferralById, getReferrals, getPatientReferrals, updateReferralStatus };

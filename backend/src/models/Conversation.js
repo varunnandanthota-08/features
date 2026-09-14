@@ -34,9 +34,19 @@ const conversationSchema = new mongoose.Schema({
     gender: { type: String, default: null },
     village: { type: String, default: null },
     symptomsDescription: { type: String, default: null },
+    duration: { type: String, default: null },
+    severity: { type: String, default: null },
+    isEmergency: { type: Boolean, default: false },
+    isExistingPatient: { type: Boolean, default: false },
+    patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient', default: null },
+    pendingField: { type: String, default: null },
+    pendingValue: { type: String, default: null },
+    documentUrl: { type: String, default: null },
+    documentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Document', default: null },
     emergencyLatitude: { type: Number, default: null },
     emergencyLongitude: { type: Number, default: null },
-    emergencyLocationLabel: { type: String, default: null }
+    emergencyLocationLabel: { type: String, default: null },
+    emergencyCaseId: { type: String, default: null }
   },
   processedMessageIds: {
     type: [String],

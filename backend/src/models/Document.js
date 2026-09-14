@@ -6,10 +6,15 @@ const documentSchema = new mongoose.Schema({
     ref: 'Patient',
     default: null
   },
+  caseId: {
+    type: String,
+    default: null,
+    index: true
+  },
   documentType: {
     type: String,
     required: true,
-    enum: ['PATIENT_REGISTRATION', 'MEDICAL_REPORT']
+    enum: ['PATIENT_REGISTRATION', 'MEDICAL_REPORT', 'PRESCRIPTION', 'LAB_REPORT', 'PATIENT_DOCUMENT']
   },
   originalFileName: {
     type: String,

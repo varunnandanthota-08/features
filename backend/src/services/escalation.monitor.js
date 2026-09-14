@@ -10,7 +10,7 @@ const DEFAULT_CHECK_INTERVAL_MS = 30 * 1000;
 const ESCALATION_CHECK_INTERVAL_MS = Number(process.env.ESCALATION_CHECK_INTERVAL_MS) > 0
   ? Number(process.env.ESCALATION_CHECK_INTERVAL_MS)
   : DEFAULT_CHECK_INTERVAL_MS;
-const activeEmergencyStatuses = ['REGISTERED', 'ALERTED', 'RESPONDING'];
+const activeEmergencyStatuses = ['REGISTERED', 'ALERTED', 'RESPONDING', 'ESCALATED'];
 const activeCaseStatuses = ['NEW', 'ASSIGNED', 'ACKNOWLEDGED', 'UNDER_REVIEW', 'IN_PROGRESS'];
 
 let monitorTimer = null;
@@ -20,8 +20,7 @@ function eligibleEmergencyQuery() {
     status: { $in: activeEmergencyStatuses },
     assignedHealthCenterId: { $ne: null },
     acknowledgedAt: null,
-    escalationLevel: 0,
-    escalationStatus: { $nin: ['ESCALATED', 'ACKNOWLEDGED_AFTER_ESCALATION', 'RESOLVED'] }
+    escalationStatus: { $nin: ['ACKNOWLEDGED_AFTER_ESCALATION', 'RESOLVED'] }
   };
 }
 
@@ -65,8 +64,7 @@ async function checkEscalations({
     ? []
     : await referralModel.find({
       status: 'PENDING',
-      acceptanceDueAt: { $lte: now },
-      escalationStatus: { $ne: 'ESCALATED' }
+      acceptanceDueAt: { $ne: null, $lte: now }
     });
   for (const referral of referralCandidates) {
     const escalatedReferral = await escalatePendingReferral(referral, now, {

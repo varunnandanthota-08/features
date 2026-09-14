@@ -8,6 +8,7 @@ const { createOrUpdatePatient, ensureEmergencyPatient } = require('./patient.ser
 const { createEmergencyCase, getPatientLocation } = require('./emergency.service');
 const { geocodeLocation } = require('./geocoding.service');
 const { createCase } = require('./case.service');
+const { finalizeRegistrationAndCase, checkExistingPatient, getActiveCasesForPhone } = require('./registration.service');
 const { CHANNEL_MENU_OPTIONS, languageForMenuOption, isMenuOption } = require('../constants/channelMenu');
 
 const messagesByLanguage = { en: enMessages, hi: hiMessages, te: teMessages };
@@ -103,6 +104,8 @@ async function processMessage({ phone, message, messageId, channel: messageChann
     channel: messageChannel
   });
 
+  const upperMessage = normalizedMessage.toUpperCase();
+
   if (!conversation) {
     conversation = new Conversation({
       phone: normalizedPhone,
@@ -110,8 +113,22 @@ async function processMessage({ phone, message, messageId, channel: messageChann
       state: CONVERSATION_STATES.SELECT_LANGUAGE,
       processedMessageIds: messageId ? [messageId] : []
     });
-    await conversation.save();
 
+    if (upperMessage === 'EMERGENCY' || upperMessage === 'SOS') {
+      await conversation.save();
+      return startChannelEmergency(conversation, messageId);
+    }
+    if (upperMessage === 'HELP') {
+      await conversation.save();
+      return { conversation, response: getMessages('en').smsHelp };
+    }
+    if (upperMessage === 'STATUS' || upperMessage === 'FOLLOWUP') {
+      await conversation.save();
+      const activeCases = await getActiveCasesForPhone(normalizedPhone);
+      return { conversation, response: getMessages('en').statusResponse(activeCases) };
+    }
+
+    await conversation.save();
     return {
       conversation,
       response: `${enMessages.welcome}\n\n${enMessages.languageSelection}`
@@ -122,7 +139,61 @@ async function processMessage({ phone, message, messageId, channel: messageChann
     return { conversation, response: null, duplicate: true };
   }
 
+  if (upperMessage === 'CANCEL' || upperMessage === 'RESET' || upperMessage === 'START AGAIN') {
+    conversation.state = CONVERSATION_STATES.SELECT_LANGUAGE;
+    conversation.language = null;
+    conversation.data = {};
+    return saveResponse(conversation, messageId, getMessages(conversation.language || 'en').cancelled);
+  }
+
+  if (upperMessage === 'HELP') {
+    return saveResponse(conversation, messageId, getMessages(conversation.language || 'en').smsHelp);
+  }
+
+  if (upperMessage === 'STATUS' || upperMessage === 'FOLLOWUP') {
+    const activeCases = await getActiveCasesForPhone(normalizedPhone);
+    return saveResponse(conversation, messageId, getMessages(conversation.language || 'en').statusResponse(activeCases));
+  }
+
+  if (upperMessage === 'EMERGENCY' || upperMessage === 'SOS') {
+    return startChannelEmergency(conversation, messageId);
+  }
+
+  if (upperMessage === 'MENU') {
+    conversation.state = CONVERSATION_STATES.MAIN_MENU;
+    return saveResponse(conversation, messageId, getMessages(conversation.language || 'en').mainMenu);
+  }
+
   switch (conversation.state) {
+    case CONVERSATION_STATES.MAIN_MENU: {
+      if (normalizedMessage === '1') {
+        const existingPatient = await checkExistingPatient(normalizedPhone);
+        if (existingPatient && existingPatient.name && existingPatient.location?.village) {
+          conversation.data.name = existingPatient.name;
+          conversation.data.age = existingPatient.age;
+          conversation.data.gender = existingPatient.gender;
+          conversation.data.village = existingPatient.location.village;
+          conversation.data.isExistingPatient = true;
+          conversation.data.patientId = existingPatient._id;
+          conversation.state = CONVERSATION_STATES.COLLECT_SYMPTOMS;
+          return saveResponse(conversation, messageId, getMessages(conversation.language || 'en').welcomeBack(existingPatient.name));
+        }
+        conversation.state = CONVERSATION_STATES.COLLECT_NAME;
+        return saveResponse(conversation, messageId, getMessages(conversation.language || 'en').askName);
+      }
+      if (normalizedMessage === '2') {
+        const activeCases = await getActiveCasesForPhone(normalizedPhone);
+        return saveResponse(conversation, messageId, getMessages(conversation.language || 'en').statusResponse(activeCases));
+      }
+      if (normalizedMessage === '3') {
+        return startChannelEmergency(conversation, messageId);
+      }
+      if (normalizedMessage === '4') {
+        return saveResponse(conversation, messageId, getMessages(conversation.language || 'en').contactSupport);
+      }
+      return saveResponse(conversation, messageId, getMessages(conversation.language || 'en').mainMenu);
+    }
+
     case CONVERSATION_STATES.START:
       conversation.state = CONVERSATION_STATES.SELECT_LANGUAGE;
       return saveResponse(conversation, messageId, `${enMessages.welcome}\n\n${enMessages.languageSelection}`);
@@ -142,6 +213,19 @@ async function processMessage({ phone, message, messageId, channel: messageChann
       }
 
       conversation.language = language;
+
+      const existingPatient = await checkExistingPatient(normalizedPhone);
+      if (existingPatient && existingPatient.name && existingPatient.location?.village) {
+        conversation.data.name = existingPatient.name;
+        conversation.data.age = existingPatient.age;
+        conversation.data.gender = existingPatient.gender;
+        conversation.data.village = existingPatient.location.village;
+        conversation.data.isExistingPatient = true;
+        conversation.data.patientId = existingPatient._id;
+        conversation.state = CONVERSATION_STATES.COLLECT_SYMPTOMS;
+        return saveResponse(conversation, messageId, getMessages(language).welcomeBack(existingPatient.name));
+      }
+
       conversation.state = CONVERSATION_STATES.COLLECT_NAME;
       return saveResponse(conversation, messageId, getMessages(language).askName);
     }
@@ -204,7 +288,7 @@ async function processMessage({ phone, message, messageId, channel: messageChann
 
     case CONVERSATION_STATES.COLLECT_GENDER: {
       const genders = { '1': 'male', '2': 'female', '3': 'other' };
-      const gender = genders[normalizedMessage];
+      const gender = genders[normalizedMessage] || genders[normalizedMessage.toLowerCase()];
 
       if (!gender) {
         return saveResponse(conversation, messageId, getMessages(conversation.language).invalidGender);
@@ -228,73 +312,245 @@ async function processMessage({ phone, message, messageId, channel: messageChann
         return saveResponse(conversation, messageId, getMessages(conversation.language).askSymptoms);
       }
       conversation.data.symptomsDescription = normalizedMessage;
-      if (messageChannel === smsChannel) {
+      conversation.state = CONVERSATION_STATES.COLLECT_DURATION;
+      return saveResponse(conversation, messageId, getMessages(conversation.language).askDuration);
+
+    case CONVERSATION_STATES.COLLECT_DURATION: {
+      const durationMap = {
+        '1': 'Less than 1 day',
+        '2': '1 to 3 days',
+        '3': '4 to 7 days',
+        '4': 'More than 1 week',
+        '5': 'More than 1 month'
+      };
+      const duration = durationMap[normalizedMessage] || normalizedMessage;
+      if (!duration || duration.length > 200) {
+        return saveResponse(conversation, messageId, getMessages(conversation.language).askDuration);
+      }
+      conversation.data.duration = duration;
+      conversation.state = CONVERSATION_STATES.COLLECT_SEVERITY;
+      return saveResponse(conversation, messageId, getMessages(conversation.language).askSeverity);
+    }
+
+    case CONVERSATION_STATES.COLLECT_SEVERITY: {
+      const severityMap = {
+        '1': 'Mild',
+        '2': 'Moderate',
+        '3': 'Severe',
+        'mild': 'Mild',
+        'moderate': 'Moderate',
+        'severe': 'Severe'
+      };
+      const severity = severityMap[normalizedMessage] || severityMap[normalizedMessage.toLowerCase()];
+      if (!severity) {
+        return saveResponse(conversation, messageId, getMessages(conversation.language).askSeverity);
+      }
+      conversation.data.severity = severity;
+      conversation.state = CONVERSATION_STATES.EMERGENCY_SCREENING;
+      return saveResponse(conversation, messageId, getMessages(conversation.language).askEmergencyScreen);
+    }
+
+    case CONVERSATION_STATES.EMERGENCY_SCREENING: {
+      const lowerScreen = normalizedMessage.toLowerCase();
+      if (['1', '2', '3', '4'].includes(normalizedMessage) ||
+          /(chest pain|breathing|bleeding|unconscious|faint|heart attack|choking)/i.test(normalizedMessage)) {
+        conversation.data.isEmergency = true;
+        return startChannelEmergency(conversation, messageId);
+      }
+
+      if (normalizedMessage === '5' || ['none', 'no', 'none of these', '5 - none of these'].includes(lowerScreen)) {
+        conversation.data.isEmergency = false;
+        if (messageChannel === channel) {
+          conversation.state = CONVERSATION_STATES.OPTIONAL_DOCUMENT;
+          return saveResponse(conversation, messageId, getMessages(conversation.language).askOptionalDocument);
+        }
         conversation.state = CONVERSATION_STATES.CONFIRM;
-        return saveResponse(conversation, messageId, getMessages(conversation.language).askConfirmation);
+        return saveResponse(conversation, messageId, getMessages(conversation.language).confirmationSummary(conversation.data));
       }
 
-      try {
-        const patient = await createOrUpdatePatient({
-          phone: conversation.phone,
-          name: conversation.data.name,
-          age: conversation.data.age,
-          gender: conversation.data.gender,
-          village: conversation.data.village,
-          language: conversation.language,
-          symptomsDescription: conversation.data.symptomsDescription
-        });
-        await createNormalCaseFromConversation(conversation, patient);
-      } catch (error) {
-        await conversation.save();
-        console.error('[WhatsApp] Patient persistence failed:', error.message);
-        return {
-          conversation,
-          response: getMessages(conversation.language).registrationFailed,
-          persistenceFailed: true
-        };
-      }
+      return saveResponse(conversation, messageId, getMessages(conversation.language).askEmergencyScreen);
+    }
 
-      conversation.state = CONVERSATION_STATES.COMPLETED;
-      return saveResponse(conversation, messageId, getMessages(conversation.language).completed);
+    case CONVERSATION_STATES.OPTIONAL_DOCUMENT: {
+      const lowerDoc = normalizedMessage.toLowerCase();
+      if (normalizedMessage === '2' || ['skip', 'no', 'none', 'later'].includes(lowerDoc)) {
+        conversation.state = CONVERSATION_STATES.CONFIRM;
+        return saveResponse(conversation, messageId, getMessages(conversation.language).confirmationSummary(conversation.data));
+      }
+      if (normalizedMessage === '1' || lowerDoc === 'upload') {
+        return saveResponse(conversation, messageId, getMessages(conversation.language).documentUploadPrompt);
+      }
+      if (normalizedMessage.startsWith('[DOCUMENT]') || normalizedMessage.startsWith('[FILE]')) {
+        conversation.data.documentUrl = normalizedMessage;
+        conversation.state = CONVERSATION_STATES.CONFIRM;
+        return saveResponse(conversation, messageId, getMessages(conversation.language).confirmationSummary(conversation.data));
+      }
+      conversation.state = CONVERSATION_STATES.CONFIRM;
+      return saveResponse(conversation, messageId, getMessages(conversation.language).confirmationSummary(conversation.data));
+    }
 
     case CONVERSATION_STATES.CONFIRM: {
-      if (messageChannel !== smsChannel) {
-        throw new Error(`Unknown conversation state: ${conversation.state}`);
+      const lowerConfirm = normalizedMessage.toLowerCase();
+      if (normalizedMessage === '1' || lowerConfirm === 'yes' || lowerConfirm === 'confirm') {
+        try {
+          const finalResult = await finalizeRegistrationAndCase({
+            phone: conversation.phone,
+            channel: messageChannel,
+            language: conversation.language,
+            data: conversation.data
+          });
+          conversation.state = CONVERSATION_STATES.COMPLETED;
+          const caseRecord = finalResult?.case;
+          const facility = finalResult?.selectedFacility;
+          const responseText = getMessages(conversation.language).caseCreatedDetailed({
+            caseId: caseRecord?.caseId || 'CASE-RECORDED',
+            status: caseRecord?.status || 'ASSIGNED',
+            facilityName: facility?.name || null
+          });
+          return saveResponse(conversation, messageId, responseText);
+        } catch (error) {
+          await conversation.save();
+          console.error(`[${messageChannel}] Patient persistence failed:`, error.message);
+          return {
+            conversation,
+            response: getMessages(conversation.language).registrationFailed,
+            persistenceFailed: true
+          };
+        }
       }
-      if (normalizedMessage === '2' || normalizedMessage.toLowerCase() === 'no') {
+
+      if (normalizedMessage === '2' || lowerConfirm === 'edit' || lowerConfirm === 'edit information') {
+        conversation.state = CONVERSATION_STATES.EDIT_SELECTION;
+        return saveResponse(conversation, messageId, getMessages(conversation.language).askEditField);
+      }
+
+      if (normalizedMessage === '3' || ['no', 'start again', 'restart', 'cancel', 'reset'].includes(lowerConfirm)) {
         conversation.state = CONVERSATION_STATES.SELECT_LANGUAGE;
         conversation.language = null;
         conversation.data = {};
-        return saveResponse(conversation, messageId, `${enMessages.welcome}\n\n${enMessages.languageSelection}`);
-      }
-      if (normalizedMessage !== '1' && normalizedMessage.toLowerCase() !== 'yes') {
-        return saveResponse(conversation, messageId, getMessages(conversation.language).invalidConfirmation);
+        return saveResponse(conversation, messageId, getMessages(conversation.language || 'en').cancelled);
       }
 
-      try {
-        const patient = await createOrUpdatePatient({
-          phone: conversation.phone,
-          name: conversation.data.name,
-          age: conversation.data.age,
-          gender: conversation.data.gender,
-          village: conversation.data.village,
-          language: conversation.language,
-          symptomsDescription: conversation.data.symptomsDescription,
-          source: smsChannel
-        });
-        await createNormalCaseFromConversation(conversation, patient);
-      } catch (error) {
-        await conversation.save();
-        console.error('[SMS] Patient persistence failed:', error.message);
-        return {
-          conversation,
-          response: getMessages(conversation.language).registrationFailed,
-          persistenceFailed: true
+      return saveResponse(conversation, messageId, getMessages(conversation.language).invalidConfirmation);
+    }
+
+    case CONVERSATION_STATES.EDIT_SELECTION: {
+      if (normalizedMessage === '9' || normalizedMessage.toLowerCase() === 'back') {
+        conversation.state = CONVERSATION_STATES.CONFIRM;
+        return saveResponse(conversation, messageId, getMessages(conversation.language).confirmationSummary(conversation.data));
+      }
+      const editFieldMap = {
+        '1': { field: 'name', prompt: 'askName' },
+        '2': { field: 'age', prompt: 'askAge' },
+        '3': { field: 'gender', prompt: 'askGender' },
+        '4': { field: 'village', prompt: 'askLocation' },
+        '5': { field: 'symptomsDescription', prompt: 'askSymptoms' },
+        '6': { field: 'duration', prompt: 'askDuration' },
+        '7': { field: 'severity', prompt: 'askSeverity' },
+        '8': { field: 'emergencyScreen', prompt: 'askEmergencyScreen' }
+      };
+      const target = editFieldMap[normalizedMessage];
+      if (!target) {
+        return saveResponse(conversation, messageId, getMessages(conversation.language).askEditField);
+      }
+      conversation.data.pendingField = target.field;
+      conversation.state = CONVERSATION_STATES.EDIT_VALUE;
+      return saveResponse(conversation, messageId, getMessages(conversation.language)[target.prompt]);
+    }
+
+    case CONVERSATION_STATES.EDIT_VALUE: {
+      const field = conversation.data.pendingField;
+
+      if (field === 'emergencyScreen') {
+        const lowerScreen = normalizedMessage.toLowerCase();
+        if (['1', '2', '3', '4'].includes(normalizedMessage) ||
+            /(chest pain|breathing|bleeding|unconscious|faint|heart attack|choking)/i.test(normalizedMessage)) {
+          conversation.data.isEmergency = true;
+          conversation.data.pendingField = null;
+          return startChannelEmergency(conversation, messageId);
+        }
+
+        if (normalizedMessage === '5' || ['none', 'no', 'none of these', '5 - none of these'].includes(lowerScreen)) {
+          conversation.data.isEmergency = false;
+          conversation.data.pendingField = null;
+          conversation.state = CONVERSATION_STATES.CONFIRM;
+          const notice = getMessages(conversation.language).fieldUpdated('Emergency screening');
+          const summary = getMessages(conversation.language).confirmationSummary(conversation.data);
+          return saveResponse(conversation, messageId, `${notice}\n\n${summary}`);
+        }
+
+        return saveResponse(conversation, messageId, getMessages(conversation.language).askEmergencyScreen);
+      }
+
+      let valid = false;
+      let parsedValue = normalizedMessage;
+      let errorMessage = null;
+
+      if (field === 'name') {
+        valid = normalizedMessage.length > 0 && normalizedMessage.length <= 100;
+        errorMessage = getMessages(conversation.language).askName;
+      } else if (field === 'age') {
+        const age = Number(normalizedMessage);
+        valid = /^\d+$/.test(normalizedMessage) && age >= 1 && age <= 120;
+        parsedValue = age;
+        errorMessage = getMessages(conversation.language).invalidAge;
+      } else if (field === 'gender') {
+        const genderMap = { '1': 'male', '2': 'female', '3': 'other', 'male': 'male', 'female': 'female', 'other': 'other' };
+        parsedValue = genderMap[normalizedMessage.toLowerCase()] || genderMap[normalizedMessage];
+        valid = Boolean(parsedValue);
+        errorMessage = getMessages(conversation.language).invalidGender;
+      } else if (field === 'village') {
+        valid = normalizedMessage.length > 0 && normalizedMessage.length <= 200;
+        errorMessage = getMessages(conversation.language).askLocation;
+      } else if (field === 'symptomsDescription') {
+        valid = normalizedMessage.length > 0 && normalizedMessage.length <= 2000;
+        errorMessage = getMessages(conversation.language).askSymptoms;
+      } else if (field === 'duration') {
+        const durationMap = {
+          '1': 'Less than 1 day',
+          '2': '1 to 3 days',
+          '3': '4 to 7 days',
+          '4': 'More than 1 week',
+          '5': 'More than 1 month'
         };
+        parsedValue = durationMap[normalizedMessage] || normalizedMessage;
+        valid = Boolean(parsedValue && parsedValue.length <= 200);
+        errorMessage = getMessages(conversation.language).askDuration;
+      } else if (field === 'severity') {
+        const severityMap = {
+          '1': 'Mild',
+          '2': 'Moderate',
+          '3': 'Severe',
+          'mild': 'Mild',
+          'moderate': 'Moderate',
+          'severe': 'Severe'
+        };
+        parsedValue = severityMap[normalizedMessage] || severityMap[normalizedMessage.toLowerCase()];
+        valid = Boolean(parsedValue);
+        errorMessage = getMessages(conversation.language).askSeverity;
       }
 
-      conversation.state = CONVERSATION_STATES.COMPLETED;
-      return saveResponse(conversation, messageId, getMessages(conversation.language).completed);
+      if (!valid) {
+        return saveResponse(conversation, messageId, errorMessage);
+      }
+
+      conversation.data[field] = parsedValue;
+      conversation.data.pendingField = null;
+      conversation.state = CONVERSATION_STATES.CONFIRM;
+
+      const fieldLabels = {
+        name: 'Name',
+        age: 'Age',
+        gender: 'Gender',
+        village: 'Location',
+        symptomsDescription: 'Health problem',
+        duration: 'Duration',
+        severity: 'Severity',
+        emergencyScreen: 'Emergency screening'
+      };
+      const notice = getMessages(conversation.language).fieldUpdated(fieldLabels[field] || field);
+      const summary = getMessages(conversation.language).confirmationSummary(conversation.data);
+      return saveResponse(conversation, messageId, `${notice}\n\n${summary}`);
     }
 
     case CONVERSATION_STATES.COMPLETED:
