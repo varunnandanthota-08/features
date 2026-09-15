@@ -72,7 +72,7 @@ async function createCase({ patientId, phone, source, complaint, location, patie
   let normalizedLocation = realLocation(location || patient.location);
   const villageText = location?.village || patient.location?.village || patientData?.village || null;
 
-  if (normalizedLocation.latitude === undefined && villageText && source === 'DASHBOARD') {
+  if (normalizedLocation.latitude === undefined && villageText) {
     try {
       const { geocodeLocation } = require('./geocoding.service');
       const geocoded = await geocodeLocation(villageText);

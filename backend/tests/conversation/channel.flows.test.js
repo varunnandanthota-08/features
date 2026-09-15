@@ -156,9 +156,17 @@ describe('CareOS Multi-Channel Communication & Registration Flows', () => {
         value: '3',
         eventId: 'IVR-EV-1'
       });
+      expect(langResult.state).toBe(CONVERSATION_STATES.IVR_MAIN_MENU);
 
-      expect(langResult.state).toBe(CONVERSATION_STATES.IVR_COLLECT_SYMPTOMS);
-      expect(langResult.session.data.name).toBe('Anil Kumar');
+      const menuResult = await ivrService.processTestInput({
+        phone,
+        callSid,
+        value: '1',
+        eventId: 'IVR-EV-2'
+      });
+
+      expect(menuResult.state).toBe(CONVERSATION_STATES.IVR_COLLECT_SYMPTOMS);
+      expect(menuResult.session.data.name).toBe('Anil Kumar');
     });
   });
 

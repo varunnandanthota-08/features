@@ -2,14 +2,21 @@ const request = require('supertest');
 
 const mockSessions = new Map();
 const mockCreateOrUpdatePatient = jest.fn();
+const mockCreateCase = jest.fn().mockResolvedValue({ case: { caseId: 'CASE-SIM-1' } });
 
 jest.mock('../src/middleware/twilioWebhookValidation', () => ({
   twilioWebhookValidation: (req, res, next) => next(),
   createTwilioWebhookValidation: () => (req, res, next) => next()
 }));
 
+jest.mock('../src/services/case.service', () => ({
+  createCase: mockCreateCase,
+  getPatientCases: jest.fn().mockResolvedValue([])
+}));
+
 jest.mock('../src/services/patient.service', () => ({
-  createOrUpdatePatient: mockCreateOrUpdatePatient
+  createOrUpdatePatient: mockCreateOrUpdatePatient,
+  findByPhone: jest.fn().mockResolvedValue(null)
 }));
 
 jest.mock('../src/models/Conversation', () => {
@@ -75,11 +82,15 @@ async function completeFlow() {
   const started = await start();
   const sessionId = started.body.sessionId;
   let response = await input(sessionId, '3');
+  response = await input(sessionId, '1');
   response = await input(sessionId, 'Ravi Kumar');
   response = await input(sessionId, '52');
   response = await input(sessionId, '1');
   response = await input(sessionId, 'Nalgonda');
   response = await input(sessionId, 'I have had fever for three days');
+  response = await input(sessionId, '2');
+  response = await input(sessionId, '1');
+  response = await input(sessionId, '5');
   expect(response.body.state).toBe('IVR_CONFIRM');
   response = await input(sessionId, '1');
   return { sessionId, response };
@@ -89,7 +100,9 @@ describe('local IVR simulator', () => {
   beforeEach(() => {
     mockSessions.clear();
     mockCreateOrUpdatePatient.mockReset();
-    mockCreateOrUpdatePatient.mockResolvedValue({ phone });
+    mockCreateOrUpdatePatient.mockResolvedValue({ _id: 'patient-123', phone });
+    mockCreateCase.mockReset();
+    mockCreateCase.mockResolvedValue({ case: { caseId: 'CASE-SIM-1' } });
   });
 
   test('runs the complete flow through HTTP and creates one Patient at confirmation', async () => {
@@ -130,8 +143,8 @@ describe('local IVR simulator', () => {
     const sessionId = started.body.sessionId;
     const setup = {
       language: [],
-      gender: [['3'], ['Ravi Kumar'], ['52']],
-      age: [['3'], ['Ravi Kumar']]
+      gender: [['3'], ['1'], ['Ravi Kumar'], ['52']],
+      age: [['3'], ['1'], ['Ravi Kumar']]
     };
     for (const [setupValue] of (setup[step] || [])) await input(sessionId, setupValue);
 
@@ -148,18 +161,22 @@ describe('local IVR simulator', () => {
     expect(mockSessions.get(started.body.sessionId).state).toBe('IVR_LANGUAGE_SELECTION');
   });
 
-  test('loads the current state by phone and returns to confirmation after rejection', async () => {
+  test('loads the current state by phone and transitions to edit menu after rejection', async () => {
     const started = await start();
     const sessionId = started.body.sessionId;
     await input(sessionId, '3');
+    await input(sessionId, '1');
     await input(sessionId, 'Ravi Kumar');
     await input(sessionId, '52');
     await input(sessionId, '1');
     await input(sessionId, 'Nalgonda');
     await input(sessionId, 'Fever for three days');
+    await input(sessionId, '2');
+    await input(sessionId, '1');
+    await input(sessionId, '5');
 
     const rejected = await request(app).post('/api/test/ivr/input').send({ phone, value: '2' });
-    expect(rejected.body.state).toBe('IVR_CONFIRM');
+    expect(rejected.body.state).toBe('IVR_EDIT_SELECTION');
     expect(mockCreateOrUpdatePatient).not.toHaveBeenCalled();
   });
 

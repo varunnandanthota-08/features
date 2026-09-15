@@ -11,8 +11,16 @@ jest.mock('../src/middleware/twilioWebhookValidation', () => ({
   createTwilioWebhookValidation: () => (req, res, next) => next()
 }));
 
+const mockCreateCase = jest.fn().mockResolvedValue({ case: { caseId: 'CASE-1' } });
+
+jest.mock('../src/services/case.service', () => ({
+  createCase: mockCreateCase,
+  getPatientCases: jest.fn().mockResolvedValue([])
+}));
+
 jest.mock('../src/services/patient.service', () => ({
-  createOrUpdatePatient: mockCreateOrUpdatePatient
+  createOrUpdatePatient: mockCreateOrUpdatePatient,
+  findByPhone: jest.fn().mockResolvedValue(null)
 }));
 
 jest.mock('../src/services/emergency.service', () => ({
@@ -104,9 +112,15 @@ describe('IVR patient information flow', () => {
     expect(mockConversations.get('CA002:IVR').state).toBe('IVR_LANGUAGE_SELECTION');
 
     const valid = await post('language', 'CA002', { Digits: '3' });
-    expect(valid.text).toContain('Please say your full name');
+    expect(valid.text).toContain('Main Menu');
     expect(mockConversations.get('CA002:IVR')).toMatchObject({
-      language: 'en', state: 'IVR_COLLECT_NAME', phone: '+919876543210'
+      language: 'en', state: 'IVR_MAIN_MENU', phone: '+919876543210'
+    });
+
+    const menuSelection = await post('menu', 'CA002', { Digits: '1' });
+    expect(menuSelection.text).toContain('Please say your full name');
+    expect(mockConversations.get('CA002:IVR')).toMatchObject({
+      state: 'IVR_COLLECT_NAME'
     });
   });
 
@@ -225,9 +239,9 @@ describe('IVR patient information flow', () => {
   });
 
   test.each([
-    ['1', 'te-IN', 'Google.te-IN-Standard-A', 'దయచేసి టోన్ తర్వాత మీ పూర్తి పేరు చెప్పండి.'],
-    ['2', 'hi-IN', 'Google.hi-IN-Standard-A', 'कृपया संकेत के बाद अपना पूरा नाम बताएं।'],
-    ['3', 'en-US', 'alice', 'Please say your full name after the tone.']
+    ['1', 'te-IN', 'Google.te-IN-Standard-A', 'ప్రధాన మెను. ఆరోగ్య సమస్యను నమోదు చేయడానికి 1 నొక్కండి'],
+    ['2', 'hi-IN', 'Google.hi-IN-Standard-A', 'मुख्य मेनू। स्वास्थ्य समस्या दर्ज करने के लिए 1 दबाएं'],
+    ['3', 'en-US', 'alice', 'Main Menu. Press 1 or say register to report a health problem']
   ])('uses the selected %s language voice for the next prompt', async (digit, language, voice, nextPrompt) => {
     const response = await post('incoming', `CA-LANGUAGE-${digit}`);
     expect(response.text).toContain('language="en-US"');
@@ -239,8 +253,8 @@ describe('IVR patient information flow', () => {
     expect(selected.text).toContain(`language="${language}"`);
     expect(selected.text).toContain(`voice="${voice}"`);
     expect(selected.text).toContain(nextPrompt);
-    expect(selected.text).toContain('action="https://example.ngrok.test/api/ivr/name"');
-    expect(selected.text).toContain('https://example.ngrok.test/api/ivr/name');
+    expect(selected.text).toContain('action="https://example.ngrok.test/api/ivr/menu"');
+    expect(selected.text).toContain('https://example.ngrok.test/api/ivr/menu');
   });
 
   test('does not advance twice for the same input webhook', async () => {
@@ -248,9 +262,9 @@ describe('IVR patient information flow', () => {
     const first = await post('language', 'CA003', { Digits: '3' });
     const duplicate = await post('language', 'CA003', { Digits: '3' });
 
-    expect(first.text).toContain('Please say your full name');
-    expect(duplicate.text).toContain('Please say your full name');
-    expect(mockConversations.get('CA003:IVR').state).toBe('IVR_COLLECT_NAME');
+    expect(first.text).toContain('Main Menu');
+    expect(duplicate.text).toContain('Main Menu');
+    expect(mockConversations.get('CA003:IVR').state).toBe('IVR_MAIN_MENU');
   });
 
   test('allows separate IVR sessions for different CallSids from one phone', async () => {
@@ -269,20 +283,24 @@ describe('IVR patient information flow', () => {
     const callSid = 'CA004';
     await post('incoming', callSid);
     await post('language', callSid, { Digits: '3' });
+    await post('menu', callSid, { Digits: '1' });
     await post('name', callSid, { SpeechResult: 'Ravi Kumar' });
     await post('age', callSid, { Digits: '52' });
     await post('gender', callSid, { Digits: '1' });
     await post('location', callSid, { SpeechResult: 'Village A' });
-    const symptoms = await post('symptoms', callSid, { SpeechResult: 'I have fever for three days.' });
+    await post('symptoms', callSid, { SpeechResult: 'I have fever for three days.' });
+    await post('duration', callSid, { Digits: '2' });
+    await post('severity', callSid, { Digits: '1' });
+    const screening = await post('emergency-screen', callSid, { Digits: '5' });
 
-    expect(symptoms.text).toContain('Press 1 to confirm');
+    expect(screening.text).toContain('Press 1 or say yes to confirm');
     expect(mockCreateOrUpdatePatient).not.toHaveBeenCalled();
 
     const confirmed = await post('confirm', callSid, { Digits: '1' });
     expect(confirmed.text).toContain('Your registration is complete');
     expect(confirmed.text).toContain('<Hangup');
     expect(mockConversations.get(`${callSid}:IVR`).state).toBe('IVR_COMPLETED');
-    expect(mockCreateOrUpdatePatient).toHaveBeenCalledWith({
+    expect(mockCreateOrUpdatePatient).toHaveBeenCalledWith(expect.objectContaining({
       phone: '+919876543210',
       name: 'Ravi Kumar',
       age: 52,
@@ -291,12 +309,13 @@ describe('IVR patient information flow', () => {
       language: 'en',
       symptomsDescription: 'I have fever for three days.',
       source: 'IVR'
-    });
+    }));
   });
 
   test('re-prompts invalid age without advancing', async () => {
     await post('incoming', 'CA005');
     await post('language', 'CA005', { Digits: '3' });
+    await post('menu', 'CA005', { Digits: '1' });
     await post('name', 'CA005', { SpeechResult: 'Ravi Kumar' });
     const invalid = await post('age', 'CA005', { Digits: '150' });
 
@@ -307,15 +326,16 @@ describe('IVR patient information flow', () => {
   test('collects age from DTMF and configures pound termination', async () => {
     await post('incoming', 'CA008');
     await post('language', 'CA008', { Digits: '3' });
+    await post('menu', 'CA008', { Digits: '1' });
     const agePrompt = await post('name', 'CA008', { SpeechResult: 'Ravi Kumar' });
 
     const response = await post('age', 'CA008', { Digits: '38' });
 
-    expect(agePrompt.text).toContain('input="dtmf"');
+    expect(agePrompt.text).toContain('input="dtmf speech"');
     expect(agePrompt.text).toContain('finishOnKey="#"');
     expect(agePrompt.text).toContain('action="https://example.ngrok.test/api/ivr/age"');
     expect(response.text).toContain('https://example.ngrok.test/api/ivr/gender');
-    expect(response.text).toContain('input="dtmf"');
+    expect(response.text).toContain('input="dtmf speech"');
     expect(response.text).toContain('numDigits="1"');
     expect(mockConversations.get('CA008:IVR')).toMatchObject({
       state: 'IVR_COLLECT_GENDER',
@@ -326,6 +346,7 @@ describe('IVR patient information flow', () => {
   test('accepts one gender digit and advances to location', async () => {
     await post('incoming', 'CA010');
     await post('language', 'CA010', { Digits: '3' });
+    await post('menu', 'CA010', { Digits: '1' });
     await post('name', 'CA010', { SpeechResult: 'Ravi Kumar' });
     await post('age', 'CA010', { Digits: '38' });
 
@@ -341,6 +362,7 @@ describe('IVR patient information flow', () => {
   test('rejects invalid gender without advancing', async () => {
     await post('incoming', 'CA011');
     await post('language', 'CA011', { Digits: '3' });
+    await post('menu', 'CA011', { Digits: '1' });
     await post('name', 'CA011', { SpeechResult: 'Ravi Kumar' });
     await post('age', 'CA011', { Digits: '38' });
 
@@ -353,6 +375,7 @@ describe('IVR patient information flow', () => {
   test('reprompts when age DTMF input is missing', async () => {
     await post('incoming', 'CA009');
     await post('language', 'CA009', { Digits: '3' });
+    await post('menu', 'CA009', { Digits: '1' });
     await post('name', 'CA009', { SpeechResult: 'Ravi Kumar' });
 
     const response = await post('age', 'CA009');
