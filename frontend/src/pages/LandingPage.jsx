@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Footer from '../components/Footer';
 import HealthCentreMap from '../components/HealthCentreMap';
-import { apiRequest } from '../services/api';
+import { apiRequest, API_BASE_URL } from '../services/api';
 
 function AnimatedCounter({ end, duration = 1500, suffix = '' }) {
   const [count, setCount] = useState(0);
@@ -43,6 +43,7 @@ export default function LandingPage() {
     totalEmergencies: 0,
     totalHealthCenters: 0
   });
+  const [whatsappLink, setWhatsappLink] = useState(null);
 
   useEffect(() => {
     // Fetch health centres for map
@@ -56,6 +57,9 @@ export default function LandingPage() {
         if (res.data) setStats(res.data);
       })
       .catch(err => console.error('Failed to load stats:', err));
+
+    // Point the WhatsApp link to the local simulator
+    setWhatsappLink(`${API_BASE_URL}/whatsapp-simulator.html`);
   }, []);
 
   return (
@@ -86,13 +90,21 @@ export default function LandingPage() {
             <p className="fade-up delay-1" style={{ fontSize: '1.15rem', color: 'var(--muted)', lineHeight: 1.6, margin: '0 0 2.5rem', maxWidth: '32rem' }}>
               CareOS connects patients, health workers, and healthcare centres. Delivering timely, accessible, and high-quality care across rural communities seamlessly.
             </p>
-            <div className="fade-up delay-2" style={{ display: 'flex', gap: '1rem' }}>
+            <div className="fade-up delay-2" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
               <button onClick={() => navigate('/role-selection?role=patient')} style={{ padding: '1rem 1.8rem', background: '#fff', border: '2px solid var(--line)', color: 'var(--ink)', borderRadius: '12px', fontSize: '1rem', fontWeight: 800, cursor: 'pointer', boxShadow: 'var(--shadow-soft)' }}>
                 I'm a Patient
               </button>
               <button onClick={() => navigate('/role-selection?role=worker')} style={{ padding: '1rem 1.8rem', background: 'var(--teal)', border: '2px solid var(--teal)', color: '#fff', borderRadius: '12px', fontSize: '1rem', fontWeight: 800, cursor: 'pointer', boxShadow: 'var(--shadow-soft)' }}>
                 I'm a Health Worker
               </button>
+              {whatsappLink && (
+                <a href={whatsappLink} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '1rem 1.8rem', background: '#25D366', border: '2px solid #25D366', color: '#fff', borderRadius: '12px', fontSize: '1rem', fontWeight: 800, cursor: 'pointer', boxShadow: 'var(--shadow-soft)', textDecoration: 'none' }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12.031 0C5.398 0 0 5.4 0 12.031c0 2.625.836 5.086 2.422 7.125L0 24l4.969-2.39c1.984 1.453 4.406 2.313 7.062 2.313 6.633 0 12.031-5.4 12.031-12.031S18.664 0 12.031 0zm0 21.969c-2.226 0-4.304-.703-6.023-1.922l-4.266 2.063 2.063-4.172c-1.383-1.851-2.203-4.148-2.203-6.656C1.602 6.508 5.406 2.703 10.172 2.703c4.765 0 8.57 3.805 8.57 8.578 0 4.774-3.805 8.578-8.57 8.578zm4.711-6.164c-.258-.125-1.523-.75-1.758-.836-.234-.086-.406-.125-.578.125-.172.25-.664.836-.813 1.016-.148.18-.305.203-.563.078-.258-.125-1.086-.406-2.07-1.281-.766-.688-1.281-1.539-1.43-1.805-.148-.266-.015-.406.11-.531.11-.117.258-.297.383-.445.125-.148.172-.25.258-.422.086-.172.047-.328-.015-.453-.063-.125-.578-1.39-.797-1.906-.211-.5-.422-.43-.578-.438h-.492c-.172 0-.453.063-.688.313-.234.25-.906.883-.906 2.156s.93 2.5 1.055 2.672c.125.172 1.828 2.789 4.43 3.89 2.601 1.102 2.601.735 3.086.688.484-.047 1.523-.625 1.734-1.234.211-.609.211-1.133.148-1.234-.063-.102-.234-.164-.492-.289z" />
+                  </svg>
+                  Chat on WhatsApp
+                </a>
+              )}
             </div>
           </div>
 

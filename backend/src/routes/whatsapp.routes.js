@@ -13,8 +13,17 @@ function createWhatsappRouter({
     controllerOptions.processMessage = conversationProcessor;
   }
   const handleWhatsappWebhook = createWhatsappController(controllerOptions);
+  const { createWhatsAppChatLink } = require('../config/whatsapp');
 
   router.post('/webhook', twilioWebhookValidation, handleWhatsappWebhook);
+  
+  router.get('/link', (req, res) => {
+    try {
+      res.json({ success: true, link: createWhatsAppChatLink() });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
 
   return router;
 }

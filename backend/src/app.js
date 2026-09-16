@@ -35,7 +35,10 @@ app.get('/health', (req, res) => {
   });
 });
 
+const metaWhatsappRoutes = require('./routes/metaWhatsapp.routes');
+
 app.use('/api/channels/whatsapp', whatsappRoutes);
+app.use('/api/channels/meta-whatsapp', metaWhatsappRoutes);
 app.use('/api/channels/sms', smsRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/ivr', ivrRoutes);

@@ -61,7 +61,10 @@ describe('normal case service', () => {
       status: 'ASSIGNED'
     });
     expect(mockFindSuitableHealthCenter).toHaveBeenCalledWith({
-      location: undefined,
+      location: {
+        latitude: 28.7934728,
+        longitude: 79.1845806
+      },
       village: 'Rampur'
     });
   });
