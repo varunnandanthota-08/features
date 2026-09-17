@@ -5,7 +5,9 @@ jest.mock('../src/services/conversation.service', () => ({
 }));
 
 jest.mock('../src/services/metaWhatsapp.service', () => ({
-  sendMessage: jest.fn().mockResolvedValue(true)
+  sendMessage: jest.fn().mockResolvedValue(true),
+  getMediaUrl: jest.fn().mockResolvedValue('https://mocked.url/media'),
+  downloadMedia: jest.fn().mockResolvedValue(Buffer.from('mocked-media-buffer'))
 }));
 
 const { app } = require('../src/app');
@@ -172,5 +174,89 @@ describe('Meta WhatsApp Webhook Verification', () => {
     
     expect(processMessageMock).toHaveBeenCalledTimes(1);
     expect(sendMessageMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('should accept image message, download media, and call Conversation Service with attachment', async () => {    
+    const response = await request(app)
+      .post('/api/channels/meta-whatsapp/webhook')
+      .send({
+        object: 'whatsapp_business_account',
+        entry: [{
+          id: '123',
+          changes: [{
+            value: {
+              messages: [{
+                from: '14155552671',
+                id: 'wamid.img123',
+                type: 'image',
+                image: { id: 'media-123', mime_type: 'image/jpeg', caption: 'Here is my report' }
+              }]
+            }
+          }]
+        }]
+      });
+    
+    expect(response.status).toBe(200);
+    expect(response.text).toBe('EVENT_RECEIVED');
+    
+    await new Promise(r => setTimeout(r, 50));
+    
+    expect(processMessageMock).toHaveBeenCalledTimes(1);
+    expect(processMessageMock).toHaveBeenCalledWith({
+      channel: 'WHATSAPP',
+      phone: '+14155552671',
+      message: 'Here is my report',
+      messageId: 'wamid.img123',
+      attachments: [{
+        url: 'https://mocked.url/media',
+        contentType: 'image/jpeg',
+        mimetype: 'image/jpeg',
+        buffer: Buffer.from('mocked-media-buffer'),
+        originalname: 'image-media-123',
+        size: Buffer.from('mocked-media-buffer').length
+      }]
+    });
+  });
+
+  it('should accept document message, download media, and call Conversation Service with attachment', async () => {    
+    const response = await request(app)
+      .post('/api/channels/meta-whatsapp/webhook')
+      .send({
+        object: 'whatsapp_business_account',
+        entry: [{
+          id: '123',
+          changes: [{
+            value: {
+              messages: [{
+                from: '14155552671',
+                id: 'wamid.doc123',
+                type: 'document',
+                document: { id: 'media-456', mime_type: 'application/pdf', filename: 'report.pdf' }
+              }]
+            }
+          }]
+        }]
+      });
+    
+    expect(response.status).toBe(200);
+    expect(response.text).toBe('EVENT_RECEIVED');
+    
+    await new Promise(r => setTimeout(r, 50));
+    
+    expect(processMessageMock).toHaveBeenCalledTimes(1);
+    expect(processMessageMock).toHaveBeenCalledWith({
+      channel: 'WHATSAPP',
+      phone: '+14155552671',
+      message: '', // No caption provided
+      messageId: 'wamid.doc123',
+      attachments: [{
+        url: 'https://mocked.url/media',
+        contentType: 'application/pdf',
+        mimetype: 'application/pdf',
+        buffer: Buffer.from('mocked-media-buffer'),
+        originalname: 'report.pdf',
+        size: Buffer.from('mocked-media-buffer').length
+      }]
+    });
   });
 });

@@ -39,7 +39,50 @@ async function sendMessage(phone, text) {
     return false;
   }
 }
+async function getMediaUrl(mediaId) {
+  if (!META_ACCESS_TOKEN) {
+    console.error('[Meta WhatsApp] Missing META_ACCESS_TOKEN for getMediaUrl.');
+    return null;
+  }
+  try {
+    const response = await fetch(`https://graph.facebook.com/${META_GRAPH_API_VERSION}/${mediaId}`, {
+      headers: { 'Authorization': `Bearer ${META_ACCESS_TOKEN}` }
+    });
+    if (!response.ok) {
+      console.error('[Meta WhatsApp] Failed to get media URL:', response.status);
+      return null;
+    }
+    const data = await response.json();
+    return data.url;
+  } catch (error) {
+    console.error('[Meta WhatsApp] Error getting media URL:', error.message);
+    return null;
+  }
+}
+
+async function downloadMedia(url) {
+  if (!META_ACCESS_TOKEN) {
+    console.error('[Meta WhatsApp] Missing META_ACCESS_TOKEN for downloadMedia.');
+    return null;
+  }
+  try {
+    const response = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${META_ACCESS_TOKEN}` }
+    });
+    if (!response.ok) {
+      console.error('[Meta WhatsApp] Failed to download media:', response.status);
+      return null;
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  } catch (error) {
+    console.error('[Meta WhatsApp] Error downloading media:', error.message);
+    return null;
+  }
+}
 
 module.exports = {
-  sendMessage
+  sendMessage,
+  getMediaUrl,
+  downloadMedia
 };
